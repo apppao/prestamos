@@ -1200,7 +1200,7 @@ function renderHistorialPrestamo(pid){
       pagoPorCuota[pg.cuotaNumero]=(pagoPorCuota[pg.cuotaNumero]||0)+pg.monto;
     }
   });
-  const mora=calcularMora(p);
+  // mora already declared above - reuse it
   let html='<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.03em">Calendario de cuotas</div>';
   html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px">';
   for(let i=0;i<p.cuotas;i++){
