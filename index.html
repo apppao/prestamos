@@ -1282,40 +1282,47 @@ function renderHistorialPrestamo(pid){
 function reciboHTMLContent(titulo, filas, nota=''){
   const cfg=CFG();
   const logoTag=cfg.logo?`<img src="${cfg.logo}" style="height:50px;max-width:140px;object-fit:contain">`:
-    `<div style="font-size:20px;font-weight:800;color:#1a3a5c">${cfg.empresa||'Préstamos a la Orden'}</div>`;
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8">
+    `<div style="font-size:22px;font-weight:800;color:#1a3a5c">${cfg.empresa||'Préstamos a la Orden'}</div>`;
+  const fechaHoy=new Date().toISOString().split('T')[0];
+  const dd=fechaHoy.split('-');
+  const fechaFmt=`${dd[2]}/${dd[1]}/${dd[0]}`;
+  return`<!DOCTYPE html><html lang="es"><head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>${titulo}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;background:#fff;padding:24px}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #1a3a5c}
-    .empresa-info{font-size:11px;color:#64748b;margin-top:4px;line-height:1.6}
-    .recibo-titulo{text-align:right}
-    .recibo-titulo h2{font-size:16px;color:#1a3a5c;font-weight:800;text-transform:uppercase}
-    .recibo-titulo .fecha{font-size:11px;color:#64748b;margin-top:4px}
-    table{width:100%;border-collapse:collapse;margin:12px 0}
-    th{background:#1a3a5c;color:#fff;padding:7px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
-    td{padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
-    tr:last-child td{border-bottom:none}
-    .total-row td{font-weight:700;font-size:13px;background:#f0f7ff;color:#1a3a5c}
-    .nota{background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:11px;margin-bottom:12px}
-    .firma{display:flex;justify-content:space-between;margin-top:28px}
-    .firma-line{width:160px;border-top:1px solid #1e293b;text-align:center;padding-top:5px;font-size:10px;color:#64748b}
-    .footer{margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;font-size:10px;color:#64748b}
-    .share-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-    .share-btn{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;display:flex;align-items:center;gap:6px}
+    body{font-family:Arial,sans-serif;font-size:16px;color:#1e293b;background:#fff;padding:16px;max-width:600px;margin:0 auto}
+    .share-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
+    .share-btn{padding:12px 20px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;border:none;flex:1;min-width:120px;text-align:center}
     .btn-share{background:#25D366;color:#fff}
     .btn-download{background:#1a3a5c;color:#fff}
     .btn-print{background:#64748b;color:#fff}
-    @media print{.share-bar{display:none!important}body{padding:8px}}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1a3a5c;gap:12px}
+    .empresa-info{font-size:13px;color:#64748b;margin-top:6px;line-height:1.6}
+    .recibo-titulo{text-align:right}
+    .recibo-titulo h2{font-size:18px;color:#1a3a5c;font-weight:800;text-transform:uppercase}
+    .recibo-titulo .fecha{font-size:13px;color:#64748b;margin-top:4px}
+    table{width:100%;border-collapse:collapse;margin:14px 0}
+    th{background:#1a3a5c;color:#fff;padding:10px 12px;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+    td{padding:11px 12px;border-bottom:1px solid #e2e8f0;font-size:15px}
+    td:last-child{text-align:right;font-weight:500}
+    tr:last-child td{border-bottom:none}
+    .total-row td{font-weight:800;font-size:17px;background:#f0f7ff;color:#1a3a5c}
+    .nota{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px;font-size:14px;margin-bottom:14px}
+    .firma{display:flex;justify-content:space-between;margin-top:36px;gap:16px}
+    .firma-line{flex:1;border-top:1px solid #1e293b;text-align:center;padding-top:6px;font-size:12px;color:#64748b}
+    .footer{margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;text-align:center;font-size:13px;color:#64748b}
+    @media print{.share-bar{display:none!important}}
   </style></head><body>
   <div class="share-bar">
-    <button class="share-btn btn-share" onclick="compartirPDF()">📤 Compartir</button>
-    <button class="share-btn btn-download" onclick="descargarPDF()">⬇️ Descargar PDF</button>
+    <button class="share-btn btn-share" onclick="compartir()">📤 Compartir</button>
+    <button class="share-btn btn-download" onclick="descargar()">⬇️ Guardar</button>
     <button class="share-btn btn-print" onclick="window.print()">🖨️ Imprimir</button>
   </div>
   <div class="header">
-    <div>${logoTag}<div class="empresa-info">${cfg.telefono||''}<br>${cfg.direccion||''}</div></div>
-    <div class="recibo-titulo"><h2>${titulo}</h2><div class="fecha">Fecha: ${formatDate(new Date().toISOString().split('T')[0])}</div></div>
+    <div>${logoTag}<div class="empresa-info">${cfg.telefono?'📞 '+cfg.telefono:''}${cfg.direccion?'<br>📍 '+cfg.direccion:''}</div></div>
+    <div class="recibo-titulo"><h2>${titulo}</h2><div class="fecha">📅 ${fechaFmt}</div></div>
   </div>
   <table><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead><tbody>
     ${filas.map(f=>f.total
@@ -1323,46 +1330,40 @@ function reciboHTMLContent(titulo, filas, nota=''){
       :`<tr><td>${f.label}</td><td style="text-align:right">${f.value}</td></tr>`
     ).join('')}
   </tbody></table>
-  ${nota?`<div class="nota">${nota}</div>`:''}
+  ${nota?`<div class="nota">📝 ${nota}</div>`:''}
   <div class="firma">
     <div class="firma-line">Firma del prestamista</div>
     <div class="firma-line">Firma del cliente</div>
   </div>
-  <div class="footer">${cfg.mensajeRecibo||''}</div>
+  <div class="footer">${cfg.mensajeRecibo||'Gracias por su pago puntual.'}</div>
   <script>
-    const _titulo=${JSON.stringify(titulo)};
-    function formatFn(n){return'RD$'+Number(n||0).toLocaleString('es-DO',{minimumFractionDigits:2});}
-    async function compartirPDF(){
-      if(navigator.share&&navigator.canShare){
+    const _t=${JSON.stringify(titulo)};
+    const _html=()=>document.documentElement.outerHTML;
+    async function compartir(){
+      const txt=_t+'\n\n'+[...document.querySelectorAll('tr')].map(r=>{
+        const cs=[...r.querySelectorAll('td,th')].map(c=>c.textContent.trim());
+        return cs.length>=2?cs[0]+': '+cs[1]:'';
+      }).filter(Boolean).join('\n');
+      if(navigator.share){
         try{
-          // Convert page to blob via fetch of current HTML
-          const html=document.documentElement.outerHTML;
-          const blob=new Blob([html],{type:'text/html'});
-          const file=new File([blob],_titulo.replace(/\s+/g,'_')+'.html',{type:'text/html'});
-          if(navigator.canShare({files:[file]})){
-            await navigator.share({files:[file],title:_titulo});
+          // Try sharing as file first
+          const blob=new Blob([_html()],{type:'text/html'});
+          const file=new File([blob],_t.replace(/\W+/g,'_')+'.html',{type:'text/html'});
+          if(navigator.canShare&&navigator.canShare({files:[file]})){
+            await navigator.share({files:[file],title:_t,text:txt});
             return;
           }
-        }catch(e){}
-        // Fallback: share as text
-        try{
-          const rows=[...document.querySelectorAll('td')];
-          let txt=_titulo+'\n';
-          for(let i=0;i<rows.length;i+=2){
-            if(rows[i]&&rows[i+1]) txt+=rows[i].textContent+': '+rows[i+1].textContent+'\n';
-          }
-          await navigator.share({title:_titulo,text:txt});
+          // Fallback: share text only
+          await navigator.share({title:_t,text:txt});
           return;
-        }catch(e){}
+        }catch(e){if(e.name==='AbortError')return;}
       }
-      descargarPDF();
+      descargar();
     }
-    function descargarPDF(){
-      const html=document.documentElement.outerHTML;
-      const blob=new Blob([html],{type:'text/html'});
+    function descargar(){
       const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);
-      a.download=_titulo.replace(/\s+/g,'_')+'_${new Date().toISOString().split('T')[0]}.html';
+      a.href='data:text/html;charset=utf-8,'+encodeURIComponent(_html());
+      a.download=_t.replace(/\W+/g,'_')+'.html';
       a.click();
     }
   <\/script>
