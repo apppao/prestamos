@@ -322,10 +322,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
             <div class="form-group"><label>Nombre completo *</label><input id="cli-nombre" type="text" placeholder="Juan Pérez"></div>
             <div class="form-group">
               <label>Cédula *</label>
-              <input id="cli-cedula" type="text" placeholder="001-0000000-0" oninput="validarCedula(this,'cli-cedula-msg')">
+              <input id="cli-cedula" type="text" placeholder="001-0000000-0" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'cli-cedula-msg')">
               <span class="field-err" id="cli-cedula-msg"></span>
             </div>
-            <div class="form-group"><label>Teléfono</label><input id="cli-tel" type="text" placeholder="809-000-0000"></div>
+            <div class="form-group"><label>Teléfono</label><input id="cli-tel" type="text" placeholder="809-000-0000" inputmode="numeric" oninput="fmtTelefono(this)"><span class="field-err" id="cli-tel-msg"></span></div>
             <div class="form-group"><label>Referencia personal</label><input id="cli-ref" type="text" placeholder="Nombre y teléfono"></div>
             <div class="form-group form-full"><label>Dirección</label><input id="cli-dir" type="text" placeholder="Calle, sector, ciudad"></div>
           </div>
@@ -401,6 +401,9 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
             <div class="form-grid">
               <div class="form-group"><label>Fecha de pago</label><input id="pag-fecha" type="date"></div>
               <div class="form-group"><label>Monto recibido (RD$) *</label><input id="pag-monto" type="number" min="0" placeholder="0" oninput="pagCalc()"></div>
+              <div class="form-group form-full">
+                <div id="pag-monto-alerta" style="display:none;background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 12px;font-size:12px;color:#854d0e;margin-bottom:4px"></div>
+              </div>
               <div class="form-group form-full"><label>Observaciones</label><input id="pag-obs" type="text" placeholder="Opcional"></div>
             </div>
             <div class="calc-box" style="margin-top:12px">
@@ -568,10 +571,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="form-group"><label>Nombre completo *</label><input id="edit-cli-nombre" type="text"></div>
       <div class="form-group">
         <label>Cédula *</label>
-        <input id="edit-cli-cedula" type="text" oninput="validarCedula(this,'edit-cedula-msg',true)">
+        <input id="edit-cli-cedula" type="text" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'edit-cedula-msg',true)">
         <span class="field-err" id="edit-cedula-msg"></span>
       </div>
-      <div class="form-group"><label>Teléfono</label><input id="edit-cli-tel" type="text"></div>
+      <div class="form-group"><label>Teléfono</label><input id="edit-cli-tel" type="text" inputmode="numeric" oninput="fmtTelefono(this)"></div>
       <div class="form-group"><label>Referencia</label><input id="edit-cli-ref" type="text"></div>
       <div class="form-group form-full"><label>Dirección</label><input id="edit-cli-dir" type="text"></div>
     </div>
@@ -592,6 +595,36 @@ function addDays(d,n){const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n
 function formatDate(d){if(!d)return'—';const[y,m,dd]=d.split('-');return`${dd}/${m}/${y}`}
 function diasDesde(d){return Math.floor((new Date()-new Date(d+'T12:00:00'))/(864e5))}
 function save(){localStorage.setItem('pao_data',JSON.stringify(DB))}
+
+// ── FORMATO TELÉFONO Y CÉDULA ────────────────────────────────
+function fmtTelefono(input){
+  let v=input.value.replace(/\D/g,'').slice(0,10);
+  if(v.length>6) v=v.slice(0,3)+'-'+v.slice(3,6)+'-'+v.slice(6);
+  else if(v.length>3) v=v.slice(0,3)+'-'+v.slice(3);
+  input.value=v;
+  const msg=input.nextElementSibling;
+  if(msg&&msg.classList.contains('field-err')){
+    const digits=v.replace(/\D/g,'');
+    if(digits.length>0&&digits.length<10){
+      msg.textContent='El teléfono debe tener 10 dígitos';
+      msg.style.display='block';msg.style.color='#ef4444';
+    } else { msg.style.display='none'; }
+  }
+}
+function fmtCedula(input){
+  let v=input.value.replace(/\D/g,'').slice(0,11);
+  if(v.length>8) v=v.slice(0,3)+'-'+v.slice(3,10)+'-'+v.slice(10);
+  else if(v.length>3) v=v.slice(0,3)+'-'+v.slice(3);
+  input.value=v;
+  const msg=input.nextElementSibling;
+  if(msg&&msg.classList.contains('field-err')){
+    const digits=v.replace(/\D/g,'');
+    if(digits.length>0&&digits.length<11){
+      msg.textContent='La cédula debe tener 11 dígitos';
+      msg.style.display='block';msg.style.color='#ef4444';
+    } else { msg.style.display='none'; validarCedula(input, msg.id); }
+  }
+}
 
 // ── BITÁCORA ──────────────────────────────────────────────────
 function audit(accion, detalle, idRef=''){
@@ -1104,6 +1137,18 @@ function pagCalc(){
   document.getElementById('pd-exc').textContent=exc>0?fmt(exc):'—';
   document.getElementById('pd-estado').textContent=completa?'✅ Cuota completa':'⚠️ Pago parcial';
   document.getElementById('pd-estado').style.color=completa?'#22c55e':'#ef4444';
+
+  // ── Validar monto vs saldo pendiente ─────────────────────
+  const saldoPendiente=Math.max(0,p.totalCobrar-totalPagadoAct)+recargo;
+  const alertEl=document.getElementById('pag-monto-alerta');
+  if(alertEl){
+    if(monto>saldoPendiente+0.01){
+      alertEl.textContent=`⚠️ El monto ingresado (${fmt(monto)}) supera el saldo pendiente (${fmt(saldoPendiente)}). ¿Deseas continuar?`;
+      alertEl.style.display='block';
+    } else {
+      alertEl.style.display='none';
+    }
+  }
 }
 let _pagoBloqueado=false;
 function guardarPago(){
@@ -1119,6 +1164,13 @@ function guardarPago(){
 
   const monto=parseFloat(document.getElementById('pag-monto').value)||0;
   if(!monto){toast('Ingresa el monto recibido','err');return}
+
+  // ── VALIDAR MONTO VS SALDO ────────────────────────────────
+  const _moraCheck=calcularMora(p);
+  const saldoPend=Math.max(0,p.totalCobrar-totalPagadoAct)+(_moraCheck.recargo||0);
+  if(monto>saldoPend+0.01){
+    if(!confirm(`⚠️ El monto ingresado (${fmt(monto)}) supera el saldo pendiente (${fmt(saldoPend)}).\n\n¿Deseas continuar de todas formas?`)) return;
+  }
 
   // ── 2. PREVENCIÓN DUPLICADOS ─────────────────────────────
   if(_pagoBloqueado){toast('Procesando, espera un momento...','warn');return}
@@ -1279,99 +1331,90 @@ function renderHistorialPrestamo(pid){
 
 // ═══════════════════ RECIBOS PDF ═══════════════════
 // ═══ RECIBOS PDF + COMPARTIR ══════════════════════════════════
-function reciboHTMLContent(titulo, filas, nota=''){
+function reciboHTMLContent(titulo, filas, nota='', telefono=''){
   const cfg=CFG();
   const logoTag=cfg.logo?`<img src="${cfg.logo}" style="height:50px;max-width:140px;object-fit:contain">`:
     `<div style="font-size:22px;font-weight:800;color:#1a3a5c">${cfg.empresa||'Préstamos a la Orden'}</div>`;
   const fechaHoy=new Date().toISOString().split('T')[0];
   const dd=fechaHoy.split('-');
   const fechaFmt=`${dd[2]}/${dd[1]}/${dd[0]}`;
+
+  // Build WhatsApp text message
+  const empresa=cfg.empresa||'Préstamos a la Orden';
+  let msgLines=[`💰 *${titulo.toUpperCase()}*`,`_${empresa}_`,`📅 ${fechaFmt}`,`━━━━━━━━━━━━━━━━`];
+  filas.forEach(f=>{
+    if(f.total) msgLines.push(`\n✅ *${f.label.toUpperCase()}: ${f.value}*`);
+    else msgLines.push(`${f.label}: ${f.value}`);
+  });
+  if(nota) msgLines.push(`\n📝 ${nota}`);
+  msgLines.push(`━━━━━━━━━━━━━━━━`);
+  msgLines.push(cfg.mensajeRecibo||'Gracias por su pago puntual. 🙏');
+  const msgText=encodeURIComponent(msgLines.join('\n'));
+
+  // WhatsApp URL — with number if available, without if not
+  const tel=telefono.replace(/\D/g,'');
+  const waUrl=tel
+    ? `https://wa.me/${tel.startsWith('1')?tel:'1809'+tel}?text=${msgText}`
+    : `https://wa.me/?text=${msgText}`;
+
   return`<!DOCTYPE html><html lang="es"><head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
   <title>${titulo}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:Arial,sans-serif;font-size:16px;color:#1e293b;background:#fff;padding:16px;max-width:600px;margin:0 auto}
-    .share-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap}
-    .share-btn{padding:12px 20px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;border:none;flex:1;min-width:120px;text-align:center}
-    .btn-share{background:#25D366;color:#fff}
-    .btn-download{background:#1a3a5c;color:#fff}
-    .btn-print{background:#64748b;color:#fff}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;padding-bottom:12px;border-bottom:3px solid #1a3a5c;gap:12px}
+    body{font-family:Arial,sans-serif;font-size:16px;color:#1e293b;background:#f8fafc;padding:16px;max-width:600px;margin:0 auto}
+    .btn-bar{display:flex;gap:8px;margin-bottom:20px}
+    .btn-wa{background:#25D366;color:#fff;padding:14px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;border:none;flex:2;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+    .btn-print{background:#64748b;color:#fff;padding:14px;border-radius:10px;font-size:16px;font-weight:700;cursor:pointer;border:none;flex:1}
+    .recibo{background:#fff;border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;padding-bottom:12px;border-bottom:3px solid #1a3a5c;gap:12px}
     .empresa-info{font-size:13px;color:#64748b;margin-top:6px;line-height:1.6}
     .recibo-titulo{text-align:right}
-    .recibo-titulo h2{font-size:18px;color:#1a3a5c;font-weight:800;text-transform:uppercase}
+    .recibo-titulo h2{font-size:17px;color:#1a3a5c;font-weight:800;text-transform:uppercase}
     .recibo-titulo .fecha{font-size:13px;color:#64748b;margin-top:4px}
-    table{width:100%;border-collapse:collapse;margin:14px 0}
-    th{background:#1a3a5c;color:#fff;padding:10px 12px;text-align:left;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+    table{width:100%;border-collapse:collapse;margin:12px 0}
+    th{background:#1a3a5c;color:#fff;padding:10px 12px;text-align:left;font-size:13px;text-transform:uppercase}
     td{padding:11px 12px;border-bottom:1px solid #e2e8f0;font-size:15px}
     td:last-child{text-align:right;font-weight:500}
     tr:last-child td{border-bottom:none}
-    .total-row td{font-weight:800;font-size:17px;background:#f0f7ff;color:#1a3a5c}
-    .nota{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px;font-size:14px;margin-bottom:14px}
-    .firma{display:flex;justify-content:space-between;margin-top:36px;gap:16px}
+    .total-row td{font-weight:800;font-size:18px;background:#f0f7ff;color:#1a3a5c}
+    .nota{background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:12px;font-size:14px;margin-bottom:12px}
+    .firma{display:flex;justify-content:space-between;margin-top:32px;gap:16px}
     .firma-line{flex:1;border-top:1px solid #1e293b;text-align:center;padding-top:6px;font-size:12px;color:#64748b}
-    .footer{margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;text-align:center;font-size:13px;color:#64748b}
-    @media print{.share-bar{display:none!important}}
+    .footer{margin-top:16px;padding-top:12px;border-top:1px solid #e2e8f0;text-align:center;font-size:13px;color:#64748b}
+    @media print{.btn-bar{display:none!important}body{background:#fff;padding:8px}}
   </style></head><body>
-  <div class="share-bar">
-    <button class="share-btn btn-share" onclick="compartir()">📤 Compartir</button>
-    <button class="share-btn btn-download" onclick="descargar()">⬇️ Guardar</button>
-    <button class="share-btn btn-print" onclick="window.print()">🖨️ Imprimir</button>
+  <div class="btn-bar">
+    <a class="btn-wa" href="${waUrl}" target="_blank">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+      Enviar por WhatsApp
+    </a>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir</button>
   </div>
-  <div class="header">
-    <div>${logoTag}<div class="empresa-info">${cfg.telefono?'📞 '+cfg.telefono:''}${cfg.direccion?'<br>📍 '+cfg.direccion:''}</div></div>
-    <div class="recibo-titulo"><h2>${titulo}</h2><div class="fecha">📅 ${fechaFmt}</div></div>
+  <div class="recibo">
+    <div class="header">
+      <div>${logoTag}<div class="empresa-info">${cfg.telefono?'📞 '+cfg.telefono:''}${cfg.direccion?'<br>📍 '+cfg.direccion:''}</div></div>
+      <div class="recibo-titulo"><h2>${titulo}</h2><div class="fecha">📅 ${fechaFmt}</div></div>
+    </div>
+    <table><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+      ${filas.map(f=>f.total
+        ?`<tr class="total-row"><td>${f.label}</td><td style="text-align:right">${f.value}</td></tr>`
+        :`<tr><td>${f.label}</td><td style="text-align:right">${f.value}</td></tr>`
+      ).join('')}
+    </tbody></table>
+    ${nota?`<div class="nota">📝 ${nota}</div>`:''}
+    <div class="firma">
+      <div class="firma-line">Firma del prestamista</div>
+      <div class="firma-line">Firma del cliente</div>
+    </div>
+    <div class="footer">${cfg.mensajeRecibo||'Gracias por su pago puntual. 🙏'}</div>
   </div>
-  <table><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead><tbody>
-    ${filas.map(f=>f.total
-      ?`<tr class="total-row"><td>${f.label}</td><td style="text-align:right">${f.value}</td></tr>`
-      :`<tr><td>${f.label}</td><td style="text-align:right">${f.value}</td></tr>`
-    ).join('')}
-  </tbody></table>
-  ${nota?`<div class="nota">📝 ${nota}</div>`:''}
-  <div class="firma">
-    <div class="firma-line">Firma del prestamista</div>
-    <div class="firma-line">Firma del cliente</div>
-  </div>
-  <div class="footer">${cfg.mensajeRecibo||'Gracias por su pago puntual.'}</div>
-  <script>
-    const _t=${JSON.stringify(titulo)};
-    const _html=()=>document.documentElement.outerHTML;
-    async function compartir(){
-      const txt=_t+'\n\n'+[...document.querySelectorAll('tr')].map(r=>{
-        const cs=[...r.querySelectorAll('td,th')].map(c=>c.textContent.trim());
-        return cs.length>=2?cs[0]+': '+cs[1]:'';
-      }).filter(Boolean).join('\n');
-      if(navigator.share){
-        try{
-          // Try sharing as file first
-          const blob=new Blob([_html()],{type:'text/html'});
-          const file=new File([blob],_t.replace(/\W+/g,'_')+'.html',{type:'text/html'});
-          if(navigator.canShare&&navigator.canShare({files:[file]})){
-            await navigator.share({files:[file],title:_t,text:txt});
-            return;
-          }
-          // Fallback: share text only
-          await navigator.share({title:_t,text:txt});
-          return;
-        }catch(e){if(e.name==='AbortError')return;}
-      }
-      descargar();
-    }
-    function descargar(){
-      const a=document.createElement('a');
-      a.href='data:text/html;charset=utf-8,'+encodeURIComponent(_html());
-      a.download=_t.replace(/\W+/g,'_')+'.html';
-      a.click();
-    }
-  <\/script>
   </body></html>`;
 }
 
-function abrirRecibo(titulo, filas, nota=''){
-  const html=reciboHTMLContent(titulo,filas,nota);
+function abrirRecibo(titulo, filas, nota='', telefono=''){
+  const html=reciboHTMLContent(titulo,filas,nota,telefono);
   const w=window.open('','_blank');
   if(w){w.document.write(html);w.document.close();}
   else{
@@ -1401,7 +1444,7 @@ function generarReciboDesembolso(pid){
     {label:'Primera cuota vence',value:formatDate(addDays(p.fechaDesembolso,p.frecuencia==='Semanal'?7:15))},
     {label:'TOTAL A PAGAR',value:fmt(p.totalCobrar),total:true},
   ];
-  abrirRecibo('Contrato de Préstamo',filas);
+  abrirRecibo('Contrato de Préstamo',filas,'',cli?cli.telefono||'':'');
 }
 
 function generarReciboPagoById(pagId){
@@ -1433,7 +1476,7 @@ function generarReciboPagoObj(pg){
     {label:'Saldo pendiente',value:fmt(saldo)},
     {label:'MONTO RECIBIDO',value:fmt(pg.monto),total:true},
   ].filter(Boolean);
-  abrirRecibo('Recibo de Pago',filas,pg.observaciones?`Nota: ${pg.observaciones}`:'');
+  abrirRecibo('Recibo de Pago',filas,pg.observaciones?`Nota: ${pg.observaciones}`:'',cli?cli.telefono||'':'');
 }
 
 // ═══════════════════ EXPORTAR ═══════════════════
