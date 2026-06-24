@@ -381,7 +381,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
             <div class="form-group"><label>Nombre completo *</label><input id="cli-nombre" type="text" placeholder="Juan Pérez"></div>
             <div class="form-group">
               <label>Cédula *</label>
-              <input id="cli-cedula" type="text" placeholder="001-0000000-0" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'cli-cedula-msg')">
+              <input id="cli-cedula" type="text" placeholder="001-0000000-0" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'cli-cedula-msg')" onblur="validarCedula(this,'cli-cedula-msg')">
               <span class="field-err" id="cli-cedula-msg"></span>
             </div>
             <div class="form-group"><label>Teléfono</label><input id="cli-tel" type="text" placeholder="809-000-0000" inputmode="numeric" oninput="fmtTelefono(this)"><span class="field-err" id="cli-tel-msg"></span></div>
@@ -658,7 +658,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
       <div class="form-group"><label>Nombre completo *</label><input id="edit-cli-nombre" type="text"></div>
       <div class="form-group">
         <label>Cédula *</label>
-        <input id="edit-cli-cedula" type="text" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'edit-cedula-msg',true)">
+        <input id="edit-cli-cedula" type="text" inputmode="numeric" oninput="fmtCedula(this);validarCedula(this,'edit-cedula-msg',true)" onblur="validarCedula(this,'edit-cedula-msg',true)">
         <span class="field-err" id="edit-cedula-msg"></span>
       </div>
       <div class="form-group"><label>Teléfono</label><input id="edit-cli-tel" type="text" inputmode="numeric" oninput="fmtTelefono(this)"></div>
@@ -1092,15 +1092,24 @@ function recalcularCuotasPorExcedente(p, excedenteAplicadoCapital){
 function validarCedula(input,msgId,isEdit=false){
   const val=input.value.trim();
   const msg=document.getElementById(msgId);
-  if(!val){msg.style.display='none';return true}
+  if(!val){msg.style.display='none';input.style.borderColor='';return true}
+  const digitos=val.replace(/\D/g,'');
+  if(digitos.length>0&&digitos.length!==11){
+    msg.textContent='\u26a0\ufe0f La c\u00e9dula debe tener 11 d\u00edgitos (tienes '+digitos.length+')';
+    msg.style.display='block';msg.style.color='#ef4444';
+    input.style.borderColor='#ef4444';
+    return false;
+  }
   const editId=isEdit?document.getElementById('edit-cli-id').value:null;
   const existe=DB.clientes.find(c=>c.cedula&&c.cedula.replace(/-/g,'')=== val.replace(/-/g,'')&&c.id!==editId);
   if(existe){
-    msg.textContent='⚠️ Esta cédula ya está registrada: '+existe.nombre;
+    msg.textContent='\u26a0\ufe0f Esta c\u00e9dula ya est\u00e1 registrada: '+existe.nombre;
     msg.style.display='block';msg.style.color='#f59e0b';
+    input.style.borderColor='#f59e0b';
     return false;
   }
   msg.style.display='none';
+  input.style.borderColor='#22c55e';
   return true;
 }
 
