@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Préstamos a la Orden</title>
+<meta name="theme-color" content="#1a3a5c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PAO">
+<link rel="manifest" id="pwa-manifest">
+<link rel="apple-touch-icon" id="pwa-icon">
 
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -358,6 +365,23 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
   </nav>
 
   <div class="main">
+    <!-- BACKUP ALERT BANNER -->
+    <div id="backup-alert" style="display:none;background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 16px;margin-bottom:12px;border-radius:0 8px 8px 0;display:none;align-items:center;gap:12px;font-size:13px">
+      <span style="font-size:18px">⚠️</span>
+      <span id="backup-alert-msg" style="flex:1;color:#92400e"></span>
+      <button class="btn btn-sm" onclick="exportarJSON()" style="background:#f59e0b;color:#fff;white-space:nowrap">Respaldar ahora</button>
+      <button onclick="document.getElementById('backup-alert').style.display='none'" style="background:none;border:none;cursor:pointer;color:#92400e;font-size:16px;padding:0 4px">✕</button>
+    </div>
+
+    <!-- CUOTAS ALERT BANNER -->
+    <div id="cuotas-alert" style="display:none;background:#fef2f2;border-left:4px solid #ef4444;padding:10px 16px;margin-bottom:12px;border-radius:0 8px 8px 0;font-size:13px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <span style="font-size:18px">🔔</span>
+        <strong style="color:#991b1b;flex:1" id="cuotas-alert-title"></strong>
+        <button onclick="document.getElementById('cuotas-alert').style.display='none'" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:16px;padding:0 4px">✕</button>
+      </div>
+      <div id="cuotas-alert-body" style="color:#7f1d1d;line-height:1.7"></div>
+    </div>
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
@@ -394,8 +418,16 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
       <div id="cli-lista" style="display:none">
         <div class="card">
           <div class="card-title">Clientes registrados</div>
-          <div class="form-group" style="max-width:320px;margin-bottom:14px">
-            <input type="text" id="cli-buscar" placeholder="🔍 Buscar por nombre o cédula..." oninput="renderTablaClientes()">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <div class="form-group" style="max-width:280px;margin:0">
+              <input type="text" id="cli-buscar" placeholder="🔍 Buscar por nombre o cédula..." oninput="renderTablaClientes()">
+            </div>
+            <select id="cli-filtro-estado" onchange="renderTablaClientes()" style="height:40px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text)">
+              <option value="">Todos los estados</option>
+              <option value="Moroso">Morosos</option>
+              <option value="Al día">Al día</option>
+              <option value="Sin préstamos">Sin préstamos</option>
+            </select>
           </div>
           <div class="tbl-wrap"><table>
             <thead><tr><th></th><th>Nombre</th><th>Cédula</th><th>Teléfono</th><th>Dirección</th><th>Préstamos</th><th>Estado</th><th>Acciones</th></tr></thead>
@@ -418,7 +450,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
             <div class="form-group"><label>Cliente *</label><select id="pre-cliente" onchange="preCalc()"><option value="">Seleccionar cliente</option></select></div>
             <div class="form-group"><label>Monto prestado (RD$) *</label><input id="pre-monto" type="number" min="0" placeholder="10000" oninput="preCalc()"></div>
             <div class="form-group"><label>Interés (%)</label><input id="pre-interes" type="number" min="0" max="100" placeholder="30" oninput="preCalc()"></div>
-            <div class="form-group"><label>Frecuencia de pago</label><select id="pre-freq" onchange="preCalc()"><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option></select></div>
+            <div class="form-group"><label>Frecuencia de pago</label><select id="pre-freq" onchange="preCalc()"><option value="Diaria">Diaria (cada 1 día)</option><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option><option value="Mensual">Mensual (cada 30 días)</option></select></div>
             <div class="form-group"><label>Cantidad de cuotas</label><input id="pre-cuotas" type="number" min="1" placeholder="10" oninput="preCalc()"></div>
             <div class="form-group"><label>Fecha de desembolso</label><input id="pre-fecha" type="date"></div>
             <div class="form-full" id="pre-calc-box" style="display:none">
@@ -438,8 +470,23 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
       <div id="pre-lista" style="display:none">
         <div class="card">
           <div class="card-title">Cartera de préstamos</div>
-          <div class="form-group" style="max-width:320px;margin-bottom:14px">
-            <input type="text" id="pre-buscar" placeholder="🔍 Buscar por cliente..." oninput="renderTablaPrestamos()">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+            <div class="form-group" style="max-width:280px;margin:0">
+              <input type="text" id="pre-buscar" placeholder="🔍 Buscar por cliente..." oninput="renderTablaPrestamos()">
+            </div>
+            <select id="pre-filtro-estado" onchange="renderTablaPrestamos()" style="height:40px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text)">
+              <option value="">Todos los estados</option>
+              <option value="Activo">Activos</option>
+              <option value="Moroso">Morosos</option>
+              <option value="Finalizado">Finalizados</option>
+            </select>
+            <select id="pre-filtro-freq" onchange="renderTablaPrestamos()" style="height:40px;padding:0 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--surface);color:var(--text)">
+              <option value="">Todas las frecuencias</option>
+              <option value="Diaria">Diaria</option>
+              <option value="Semanal">Semanal</option>
+              <option value="Quincenal">Quincenal</option>
+              <option value="Mensual">Mensual</option>
+            </select>
           </div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>#</th><th>Cliente</th><th>Monto</th><th>Total</th><th>Cuota</th><th>Frec.</th><th>Avance</th><th>Estado</th><th></th></tr></thead>
@@ -489,6 +536,9 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
           <div class="card" id="pag-hist-card" style="display:none">
             <div class="card-title">Historial del préstamo</div>
             <div id="pag-hist-resumen" class="historial-header"></div>
+            <div class="form-group" style="max-width:280px;margin-bottom:10px">
+              <input type="text" id="pag-hist-buscar" placeholder="🔍 Buscar por fecha, monto, estado..." oninput="filtrarHistorialPagos()">
+            </div>
             <div class="tbl-wrap"><table>
               <thead><tr><th>#</th><th>Fecha</th><th>Recibido</th><th>Interés</th><th>Capital</th><th>Excedente</th><th>Estado</th><th></th></tr></thead>
               <tbody id="pag-hist-tabla"></tbody>
@@ -679,7 +729,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
       <div class="form-group"><label>Monto prestado (RD$) *</label><input id="edit-pre-monto" type="number" min="0"></div>
       <div class="form-group"><label>Interés (%)</label><input id="edit-pre-interes" type="number" min="0" max="100"></div>
       <div class="form-group"><label>Frecuencia de pago</label>
-        <select id="edit-pre-freq"><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option></select>
+        <select id="edit-pre-freq"><option value="Diaria">Diaria (cada 1 día)</option><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option><option value="Mensual">Mensual (cada 30 días)</option></select>
       </div>
       <div class="form-group"><label>Cantidad de cuotas</label><input id="edit-pre-cuotas" type="number" min="1"></div>
       <div class="form-group form-full"><label>Fecha de desembolso</label><input id="edit-pre-fecha" type="date"></div>
@@ -697,6 +747,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
     <div id="detcli-lista"></div>
     <div class="btn-row admin-only">
       <button class="btn btn-primary" onclick="exportarExpedienteCliente()">📄 Exportar expediente (PDF)</button>
+      <button class="btn" style="background:#25D366;color:#fff" onclick="estadoCuentaWhatsApp()">📲 Estado de cuenta por WhatsApp</button>
     </div>
   </div>
 </div>
@@ -745,6 +796,130 @@ const today = () => new Date().toISOString().split('T')[0];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const initials = n => n.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
 function addDays(d,n){const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n);return dt.toISOString().split('T')[0]}
+function freqDias(f){return f==='Diaria'?1:f==='Semanal'?7:f==='Mensual'?30:15}
+function initPWA(){
+  // Inline SVG icon as data URL (blue coin/money icon)
+  const iconSvg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><rect width="512" height="512" rx="100" fill="#1a3a5c"/><text x="256" y="340" font-size="280" text-anchor="middle" fill="#f0a500" font-family="Arial,sans-serif" font-weight="bold">$</text></svg>`;
+  const iconUrl='data:image/svg+xml;base64,'+btoa(iconSvg);
+
+  // Set apple touch icon
+  const iconEl=document.getElementById('pwa-icon');
+  if(iconEl) iconEl.href=iconUrl;
+
+  // Build manifest JSON inline
+  const manifest={
+    name:'Préstamos a la Orden',
+    short_name:'PAO',
+    description:'Gestión de préstamos informales',
+    start_url:window.location.href.split('?')[0],
+    display:'standalone',
+    background_color:'#0f172a',
+    theme_color:'#1a3a5c',
+    orientation:'portrait-primary',
+    icons:[
+      {src:iconUrl,sizes:'512x512',type:'image/svg+xml',purpose:'any maskable'}
+    ]
+  };
+  const manifestBlob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
+  const manifestUrl=URL.createObjectURL(manifestBlob);
+  const manifestEl=document.getElementById('pwa-manifest');
+  if(manifestEl) manifestEl.href=manifestUrl;
+
+  // Register inline service worker for offline support
+  if('serviceWorker' in navigator){
+    const swCode=`
+const CACHE='pao-v1';
+const URLS=[self.location.href.replace('sw.js','')];
+self.addEventListener('install',e=>e.waitUntil(
+  caches.open(CACHE).then(c=>c.add(self.location.href.replace(/\\/sw\\.js$/,'')||'/'))
+));
+self.addEventListener('fetch',e=>e.respondWith(
+  caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>caches.match(e.request)))
+));`;
+    const swBlob=new Blob([swCode],{type:'text/javascript'});
+    const swUrl=URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swUrl).catch(()=>{});
+  }
+
+  // Install prompt button
+  let deferredPrompt=null;
+  window.addEventListener('beforeinstallprompt',e=>{
+    e.preventDefault();
+    deferredPrompt=e;
+    // Show install button in header if not already installed
+    const nav=document.querySelector('.nav-right')||document.querySelector('nav');
+    if(nav&&!document.getElementById('btn-instalar')){
+      const btn=document.createElement('button');
+      btn.id='btn-instalar';
+      btn.title='Instalar app';
+      btn.style.cssText='background:#f0a500;color:#1a3a5c;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px';
+      btn.textContent='📲 Instalar';
+      btn.onclick=()=>{deferredPrompt.prompt();deferredPrompt.userChoice.then(()=>{deferredPrompt=null;btn.remove()})};
+      nav.appendChild(btn);
+    }
+  });
+}
+
+function checkCuotasAlert(){
+  const banner=document.getElementById('cuotas-alert');
+  if(!banner)return;
+  const hoy=today();
+  const en3dias=addDays(hoy,3);
+  const vencenHoy=[],vencenProximo=[],enMoraList=[];
+  DB.prestamos.forEach(p=>{
+    if(p.estado!=='Activo'&&p.estado!=='Moroso')return;
+    const cli=DB.clientes.find(c=>c.id===p.clienteId);
+    const nombre=cli?cli.nombre:'Cliente';
+    const cuota=getProximaCuotaPendiente(p);
+    if(!cuota)return;
+    const monto=fmt(cuota.capitalPend+cuota.interesPend);
+    if(p.estado==='Moroso'){
+      const mora=calcularMora(p);
+      enMoraList.push(`<strong>${nombre}</strong> — cuota #${cuota.numero} venció el ${formatDate(cuota.fecha)} (${mora.dias} día${mora.dias!==1?'s':''} mora)`);
+    } else if(cuota.fecha===hoy){
+      vencenHoy.push(`<strong>${nombre}</strong> — cuota #${cuota.numero} vence HOY (${monto})`);
+    } else if(cuota.fecha<=en3dias){
+      vencenProximo.push(`<strong>${nombre}</strong> — cuota #${cuota.numero} vence el ${formatDate(cuota.fecha)} (${monto})`);
+    }
+  });
+  const total=enMoraList.length+vencenHoy.length+vencenProximo.length;
+  if(total===0){banner.style.display='none';return;}
+  let titulo='';
+  if(enMoraList.length>0&&vencenHoy.length===0&&vencenProximo.length===0)
+    titulo=`${enMoraList.length} préstamo${enMoraList.length!==1?'s':''} en mora`;
+  else if(vencenHoy.length>0||vencenProximo.length>0)
+    titulo=`${vencenHoy.length+vencenProximo.length} cuota${vencenHoy.length+vencenProximo.length!==1?'s':''} próxima${vencenHoy.length+vencenProximo.length!==1?'s':''}${enMoraList.length>0?' + '+enMoraList.length+' en mora':''}`;
+  document.getElementById('cuotas-alert-title').textContent='🔔 '+titulo;
+  let html='';
+  if(enMoraList.length>0) html+=enMoraList.map(l=>`<div>🔴 ${l}</div>`).join('');
+  if(vencenHoy.length>0)  html+=vencenHoy.map(l=>`<div>🟠 ${l}</div>`).join('');
+  if(vencenProximo.length>0) html+=vencenProximo.map(l=>`<div>🟡 ${l}</div>`).join('');
+  document.getElementById('cuotas-alert-body').innerHTML=html;
+  banner.style.display='block';
+}
+
+function checkBackupAlert(){
+  const banner=document.getElementById('backup-alert');
+  if(!banner)return;
+  const last=localStorage.getItem('pao_last_backup');
+  if(!last){
+    const totalReg=(DB.clientes||[]).length+(DB.prestamos||[]).length;
+    if(totalReg<3){banner.style.display='none';return;}
+    document.getElementById('backup-alert-msg').textContent='⚠️ Nunca has hecho un respaldo. Si borras el caché del navegador perderás todos tus datos.';
+    banner.style.display='flex';return;
+  }
+  const dias=Math.floor((Date.now()-new Date(last).getTime())/(1000*60*60*24));
+  const msg=document.getElementById('backup-alert-msg');
+  if(dias>=15){
+    msg.textContent=`Último respaldo hace ${dias} días. ¡Respalda ahora para no perder tus datos!`;
+    banner.style.display='flex';
+  } else if(dias>=7){
+    msg.textContent=`Último respaldo hace ${dias} días. Recomendamos respaldar semanalmente.`;
+    banner.style.display='flex';
+  } else {
+    banner.style.display='none';
+  }
+}
 function formatDate(d){if(!d)return'—';const[y,m,dd]=d.split('-');return`${dd}/${m}/${y}`}
 function diasDesde(d){return Math.floor((new Date()-new Date(d+'T12:00:00'))/(864e5))}
 function save(){localStorage.setItem('pao_data',JSON.stringify(DB))}
@@ -864,6 +1039,9 @@ function doLogin(){
   applyBranding();
   actualizarSelectsClientes();
   renderDashboard();
+  checkBackupAlert();
+  checkCuotasAlert();
+  initPWA();
 }
 
 function intentarSesionGuardada(){
@@ -984,7 +1162,30 @@ function goTo(page){
   if(page==='arqueo') renderArqueo();
   if(page==='bitacora') renderBitacoraPage();
   if(page==='config') renderConfig();
+  window._paginaActual=page;
 }
+
+// ── GESTOS TÁCTILES (swipe izq/der para cambiar página) ─────────
+(function initSwipe(){
+  const PAGES=['dashboard','clientes','prestamos','pagos','miDia','arqueo','bitacora','config'];
+  let tx=0,ty=0;
+  document.addEventListener('touchstart',e=>{
+    if(e.target.closest('input,select,textarea,button,.tbl-wrap,.modal,.modal-backdrop'))return;
+    tx=e.touches[0].clientX;ty=e.touches[0].clientY;
+  },{passive:true});
+  document.addEventListener('touchend',e=>{
+    if(!tx)return;
+    const dx=e.changedTouches[0].clientX-tx;
+    const dy=e.changedTouches[0].clientY-ty;
+    tx=ty=0;
+    if(Math.abs(dy)>Math.abs(dx)||Math.abs(dx)<60)return; // no es swipe horizontal
+    const cur=window._paginaActual||'dashboard';
+    const idx=PAGES.indexOf(cur);
+    if(idx===-1)return;
+    if(dx<0&&idx<PAGES.length-1) goTo(PAGES[idx+1]); // swipe izquierda → página siguiente
+    if(dx>0&&idx>0)               goTo(PAGES[idx-1]); // swipe derecha → página anterior
+  },{passive:true});
+})();
 
 function showTab(prefix,tab){
   ['nuevo','lista'].forEach(t=>{
@@ -1015,7 +1216,7 @@ function getProximaCuotaPendiente(p){
   const pagos=getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado');
   const capTotal=pagos.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
   const intTotal=pagos.reduce((s,pg)=>s+pg.interesAplicado,0);
-  const freq=p.frecuencia==='Semanal'?7:15;
+  const freq=freqDias(p.frecuencia);
   // Si hay un plan de cuotas personalizado (por recálculo de excedente), usarlo
   const plan=getPlanCuotas(p);
   let capAcum=0, intAcum=0;
@@ -1187,13 +1388,24 @@ function renderClientes(){actualizarSelectsClientes()}
 function renderTablaClientes(){
   const tbody=document.getElementById('cli-tabla');
   const buscarEl=document.getElementById('cli-buscar');
+  const filtroEl=document.getElementById('cli-filtro-estado');
   const q=buscarEl?buscarEl.value.trim().toLowerCase():'';
+  const filtroEstado=filtroEl?filtroEl.value:'';
   let lista=DB.clientes;
   if(q){
     lista=lista.filter(c=>
       c.nombre.toLowerCase().includes(q) ||
       (c.cedula&&c.cedula.replace(/-/g,'').includes(q.replace(/-/g,'')))
     );
+  }
+  if(filtroEstado){
+    lista=lista.filter(c=>{
+      const pres=DB.prestamos.filter(p=>p.clienteId===c.id);
+      const morosos=pres.filter(p=>p.estado==='Moroso').length;
+      const activos=pres.filter(p=>p.estado==='Activo').length;
+      const label=morosos>0?'Moroso':activos>0?'Al día':'Sin préstamos';
+      return label===filtroEstado;
+    });
   }
   if(DB.clientes.length===0){tbody.innerHTML='<tr><td colspan="8" class="empty">Sin clientes registrados</td></tr>';return}
   if(lista.length===0){tbody.innerHTML='<tr><td colspan="8" class="empty">Sin resultados para "'+q+'"</td></tr>';return}
@@ -1277,7 +1489,10 @@ function actualizarSelectsClientes(){
 function preCalc(){
   const monto=parseFloat(document.getElementById('pre-monto').value)||0;
   const pct=parseFloat(document.getElementById('pre-interes').value)||0;
+  const freq=document.getElementById('pre-freq').value;
   const cuotas=parseInt(document.getElementById('pre-cuotas').value)||0;
+  const maxC=freq==='Diaria'?90:freq==='Mensual'?60:freq==='Quincenal'?60:52;
+  document.getElementById('pre-cuotas').placeholder=`1–${maxC}`;
   const box=document.getElementById('pre-calc-box');
   if(!monto||!cuotas){box.style.display='none';return}
   box.style.display='block';
@@ -1297,6 +1512,8 @@ function guardarPrestamo(){
   const cuotas=parseInt(document.getElementById('pre-cuotas').value)||0;
   const fecha=document.getElementById('pre-fecha').value||today();
   if(!cliId||!monto||!cuotas){toast('Completa los campos requeridos','err');return}
+  const maxCuotas=freq==='Diaria'?90:freq==='Mensual'?60:freq==='Quincenal'?60:52;
+  if(cuotas>maxCuotas){toast(`Máximo ${maxCuotas} cuotas para frecuencia ${freq}`,'err');return}
   const intCalc=monto*(pct/100),total=monto+intCalc;
   const pid=uid();
   DB.prestamos.push({id:pid,clienteId:cliId,monto,interesPct:pct,interesCalc:intCalc,totalCobrar:total,frecuencia:freq,cuotas,capitalCuota:monto/cuotas,interesCuota:intCalc/cuotas,fechaDesembolso:fecha,estado:'Activo'});
@@ -1315,7 +1532,11 @@ function renderPrestamos(){actualizarSelectsClientes()}
 function renderTablaPrestamos(){
   const tbody=document.getElementById('pre-tabla');
   const buscarEl=document.getElementById('pre-buscar');
+  const filtroEstadoEl=document.getElementById('pre-filtro-estado');
+  const filtroFreqEl=document.getElementById('pre-filtro-freq');
   const q=buscarEl?buscarEl.value.trim().toLowerCase():'';
+  const filtroEstado=filtroEstadoEl?filtroEstadoEl.value:'';
+  const filtroFreq=filtroFreqEl?filtroFreqEl.value:'';
   let lista=DB.prestamos.map((p,i)=>({p,i}));
   if(q){
     lista=lista.filter(({p})=>{
@@ -1323,6 +1544,8 @@ function renderTablaPrestamos(){
       return cli&&cli.nombre.toLowerCase().includes(q);
     });
   }
+  if(filtroEstado) lista=lista.filter(({p})=>p.estado===filtroEstado);
+  if(filtroFreq)   lista=lista.filter(({p})=>p.frecuencia===filtroFreq);
   if(DB.prestamos.length===0){tbody.innerHTML='<tr><td colspan="9" class="empty">Sin préstamos registrados</td></tr>';return}
   if(lista.length===0){tbody.innerHTML='<tr><td colspan="9" class="empty">Sin resultados para "'+q+'"</td></tr>';return}
   tbody.innerHTML=lista.map(({p,i})=>{
@@ -1495,6 +1718,48 @@ function abrirDetallePrestamo(pid){
     <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');document.getElementById('pag-cliente').value='${p.clienteId}';cargarPrestamosCliente();">💳 Ir a registrar pago</button>
     <button class="btn btn-primary admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirEditPrestamo('${p.id}')">✏️ Editar préstamo</button>
   </div>`;
+
+  // Tabla de amortización colapsable
+  const plan=getPlanCuotas(p);
+  const freq=freqDias(p.frecuencia);
+  const pagosActivos=getPagosPresta(pid).filter(pg=>pg.estado!=='Anulado');
+  const capPagado=pagosActivos.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
+  const intPagado=pagosActivos.reduce((s,pg)=>s+pg.interesAplicado,0);
+  let capAcum=0,intAcum=0;
+  const filas=plan.map((cuota,i)=>{
+    const num=i+1;
+    capAcum+=cuota.capital; intAcum+=cuota.interes;
+    const fecha=addDays(p.fechaDesembolso,num*freq);
+    const pagada=capPagado>=capAcum*0.99&&intPagado>=intAcum*0.99;
+    const vencida=!pagada&&fecha<today();
+    const cl=pagada?'color:#22c55e':vencida?'color:#ef4444':'';
+    const icon=pagada?'✓':vencida?'⚠':'·';
+    return`<tr style="${pagada?'opacity:.6':''}">
+      <td>${icon} #${num}</td>
+      <td>${formatDate(fecha)}</td>
+      <td class="num">${fmt(cuota.capital+cuota.interes)}</td>
+      <td class="num">${fmt(cuota.capital)}</td>
+      <td class="num">${fmt(cuota.interes)}</td>
+      <td class="num" style="${cl}">${fmt(Math.max(0,p.totalCobrar-capAcum-intAcum))}</td>
+    </tr>`;
+  }).join('');
+  html+=`
+  <details style="margin-top:12px">
+    <summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;padding:8px 0;user-select:none">
+      📊 Tabla de amortización (${p.cuotas} cuotas)
+    </summary>
+    <div class="tbl-wrap" style="margin-top:8px"><table>
+      <thead><tr><th>Cuota</th><th>Fecha</th><th>Total</th><th>Capital</th><th>Interés</th><th>Saldo</th></tr></thead>
+      <tbody>${filas}</tbody>
+      <tfoot><tr style="font-weight:700;background:var(--surface-alt,var(--surface))">
+        <td colspan="2">Total</td>
+        <td class="num">${fmt(p.totalCobrar)}</td>
+        <td class="num">${fmt(p.monto)}</td>
+        <td class="num">${fmt(p.interesCalc)}</td>
+        <td class="num">—</td>
+      </tr></tfoot>
+    </table></div>
+  </details>`;
 
   document.getElementById('detpre-contenido').innerHTML=html;
   document.getElementById('modal-detalle-prestamo').classList.add('open');
@@ -1792,6 +2057,8 @@ function confirmarAnulacion(){
 function renderHistorialPrestamo(pid){
   const p=DB.prestamos.find(x=>x.id===pid);if(!p)return;
   const pagos=getPagosPresta(pid).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+  window._histPagosActual=pagos; window._histPrestamoActual=p;
+  const buscEl=document.getElementById('pag-hist-buscar');if(buscEl)buscEl.value='';
   const card=document.getElementById('pag-hist-card');card.style.display='block';
   const totalPag=pagos.filter(pg=>pg.estado!=='Anulado').reduce((s,pg)=>s+pg.monto,0);
   const totalAnulado=pagos.filter(pg=>pg.estado==='Anulado').reduce((s,pg)=>s+pg.monto,0);
@@ -1804,27 +2071,8 @@ function renderHistorialPrestamo(pid){
     ${totalAnulado>0?`<span style="color:var(--red-text)">Anulado: <strong>${fmt(totalAnulado)}</strong></span>`:''}
     ${mora.enMora?`<span style="color:#ef4444">⚠️ En mora: <strong>${mora.dias} día${mora.dias!==1?'s':''}</strong>${mora.recargo>0?' — Recargo: '+fmt(mora.recargo):''}` :''}
   `;
-  const tbody=document.getElementById('pag-hist-tabla');
-  const pagosActivos=pagos.filter(pg=>pg.estado!=='Anulado');
-  tbody.innerHTML=pagos.length===0?'<tr><td colspan="8" class="empty">Sin pagos registrados</td></tr>':
-    pagos.map((pg,i)=>{
-      const anulado=pg.estado==='Anulado';
-      const completa=!anulado&&pg.interesAplicado>=(p.interesCuota*0.99)&&pg.capitalAplicado>=(p.capitalCuota*0.99);
-      const badge=anulado?'badge-red':completa?'badge-green':'badge-yellow';
-      const label=anulado?'Anulado':completa?'Completo':'Parcial';
-      const rowStyle=anulado?'opacity:.5;text-decoration:line-through':'';
-      return`<tr style="${rowStyle}">
-        <td>${i+1}</td>
-        <td>${formatDate(pg.fecha)}</td>
-        <td class="num"><strong>${fmt(pg.monto)}</strong></td>
-        <td class="num">${fmt(pg.interesAplicado)}</td>
-        <td class="num">${fmt(pg.capitalAplicado)}</td>
-        <td class="num">${pg.excedente>0?fmt(pg.excedente):'—'}</td>
-        <td><span class="badge ${badge}" ${anulado&&pg.motivoAnulacion?`title="Motivo: ${pg.motivoAnulacion}"`:''}>${label}</span></td>
-        <td>${!anulado?`<button class="btn btn-sm btn-danger admin-only" onclick="anularPago('${pg.id}')">Anular</button>`:`<span style="font-size:11px;color:var(--text-muted)" title="${pg.motivoAnulacion||''}">${pg.motivoAnulacion?'📝 '+(pg.motivoAnulacion.length>20?pg.motivoAnulacion.slice(0,20)+'...':pg.motivoAnulacion):'anulado'}</span>`}</td>
-      </tr>`;
-    }).join('');
-  const freq=p.frecuencia==='Semanal'?7:15;
+  renderFilasPagosHist(pagos,p);
+  const freq=freqDias(p.frecuencia);
   const pagosActCal=pagos.filter(pg=>pg.estado!=='Anulado');
   const capTotal=pagosActCal.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
   const intTotal=pagosActCal.reduce((s,pg)=>s+pg.interesAplicado,0);
@@ -1870,8 +2118,46 @@ function renderHistorialPrestamo(pid){
   aplicarVisibilidadAdmin();
 }
 
+function renderFilasPagosHist(pagos,p){
+  const tbody=document.getElementById('pag-hist-tabla');
+  tbody.innerHTML=pagos.length===0?'<tr><td colspan="8" class="empty">Sin pagos registrados</td></tr>':
+    pagos.map((pg,i)=>{
+      const anulado=pg.estado==='Anulado';
+      const completa=!anulado&&pg.interesAplicado>=(p.interesCuota*0.99)&&pg.capitalAplicado>=(p.capitalCuota*0.99);
+      const badge=anulado?'badge-red':completa?'badge-green':'badge-yellow';
+      const label=anulado?'Anulado':completa?'Completo':'Parcial';
+      const rowStyle=anulado?'opacity:.5;text-decoration:line-through':'';
+      return`<tr style="${rowStyle}">
+        <td>${i+1}</td>
+        <td>${formatDate(pg.fecha)}</td>
+        <td class="num"><strong>${fmt(pg.monto)}</strong></td>
+        <td class="num">${fmt(pg.interesAplicado)}</td>
+        <td class="num">${fmt(pg.capitalAplicado)}</td>
+        <td class="num">${pg.excedente>0?fmt(pg.excedente):'—'}</td>
+        <td><span class="badge ${badge}" ${anulado&&pg.motivoAnulacion?`title="Motivo: ${pg.motivoAnulacion}"`:''}>${label}</span></td>
+        <td>${!anulado?`<button class="btn btn-sm btn-danger admin-only" onclick="anularPago('${pg.id}')">Anular</button>`:`<span style="font-size:11px;color:var(--text-muted)" title="${pg.motivoAnulacion||''}">${pg.motivoAnulacion?'📝 '+(pg.motivoAnulacion.length>20?pg.motivoAnulacion.slice(0,20)+'...':pg.motivoAnulacion):'anulado'}</span>`}</td>
+      </tr>`;
+    }).join('');
+}
+function filtrarHistorialPagos(){
+  const pagos=window._histPagosActual||[];
+  const p=window._histPrestamoActual;
+  if(!p) return;
+  const q=(document.getElementById('pag-hist-buscar').value||'').trim().toLowerCase();
+  if(!q){renderFilasPagosHist(pagos,p);return;}
+  const filtrados=pagos.filter(pg=>{
+    return formatDate(pg.fecha).toLowerCase().includes(q)||
+      pg.fecha.includes(q)||
+      fmt(pg.monto).includes(q)||
+      String(pg.monto).includes(q)||
+      (pg.estado||'').toLowerCase().includes(q)||
+      (pg.motivoAnulacion||'').toLowerCase().includes(q)||
+      (pg.cuotaNumero&&String(pg.cuotaNumero).includes(q));
+  });
+  renderFilasPagosHist(filtrados,p);
+}
+
 // ═══════════════════ RECIBOS PDF ═══════════════════
-// ═══ RECIBOS PDF + COMPARTIR ══════════════════════════════════
 function reciboHTMLContent(titulo, filas, nota='', telefono=''){
   const cfg=CFG();
   const logoTag=cfg.logo?`<img src="${cfg.logo}" style="height:50px;max-width:140px;object-fit:contain">`:
@@ -1972,6 +2258,59 @@ function abrirRecibo(titulo, filas, nota='', telefono=''){
 }
 
 // ── EXPEDIENTE COMPLETO DE CLIENTE (todos sus préstamos + historiales) ──
+function estadoCuentaWhatsApp(){
+  const cid=document.getElementById('detcli-id').value;
+  const c=DB.clientes.find(x=>x.id===cid);if(!c)return;
+  const cfg=CFG();
+  const empresa=cfg.empresa||'Préstamos a la Orden';
+  const pres=DB.prestamos.filter(p=>p.clienteId===cid);
+  const activos=pres.filter(p=>p.estado==='Activo'||p.estado==='Moroso');
+  const fechaHoy=new Date().toLocaleDateString('es-DO',{day:'2-digit',month:'2-digit',year:'numeric'});
+
+  let lineas=[
+    `💰 *ESTADO DE CUENTA*`,
+    `_${empresa}_`,
+    `📅 ${fechaHoy}`,
+    `━━━━━━━━━━━━━━━━`,
+    `👤 *Cliente:* ${c.nombre}`,
+  ];
+  if(c.cedula) lineas.push(`🪪 *Cédula:* ${c.cedula}`);
+
+  if(activos.length===0){
+    lineas.push(`\n✅ No tiene préstamos activos pendientes.`);
+  } else {
+    lineas.push(`\n📋 *Préstamos activos: ${activos.length}*`);
+    activos.forEach((p,i)=>{
+      const stats=calcPrestamoStats(p);
+      const saldo=Math.max(0,p.totalCobrar-stats.totalPagado);
+      const cuota=getProximaCuotaPendiente(p);
+      const mora=calcularMora(p);
+      lineas.push(`\n*Préstamo ${i+1}* (${formatDate(p.fechaDesembolso)})`);
+      lineas.push(`  • Total: ${fmt(p.totalCobrar)}`);
+      lineas.push(`  • Pagado: ${fmt(stats.totalPagado)} (${stats.pct}%)`);
+      lineas.push(`  • *Saldo pendiente: ${fmt(saldo)}*`);
+      lineas.push(`  • Frecuencia: ${p.frecuencia} · ${p.cuotas} cuotas`);
+      if(cuota) lineas.push(`  • Próx. cuota: ${fmt(cuota.capitalPend+cuota.interesPend)} el ${formatDate(cuota.fecha)}`);
+      if(mora.enMora) lineas.push(`  • ⚠️ *En mora: ${mora.dias} día${mora.dias!==1?'s':''}*${mora.recargo>0?' — Recargo: '+fmt(mora.recargo):''}`);
+    });
+    const totalSaldo=activos.reduce((s,p)=>{
+      const stats=calcPrestamoStats(p);
+      return s+Math.max(0,p.totalCobrar-stats.totalPagado);
+    },0);
+    if(activos.length>1) lineas.push(`\n💵 *Total adeudado: ${fmt(totalSaldo)}*`);
+  }
+
+  lineas.push(`\n━━━━━━━━━━━━━━━━`);
+  lineas.push(cfg.mensajeRecibo||'Gracias por su preferencia. 🙏');
+  if(cfg.telefono) lineas.push(`📞 ${cfg.telefono}`);
+
+  const msgText=encodeURIComponent(lineas.join('\n'));
+  const tel=(c.telefono||'').replace(/\D/g,'');
+  const telConPais=tel.length===10?'1'+tel:tel;
+  const waUrl=tel?`https://wa.me/${telConPais}?text=${msgText}`:`https://wa.me/?text=${msgText}`;
+  window.open(waUrl,'_blank');
+}
+
 function exportarExpedienteCliente(){
   const cid=document.getElementById('detcli-id').value;
   const c=DB.clientes.find(x=>x.id===cid);
@@ -2096,7 +2435,7 @@ function generarReciboDesembolso(pid){
     {label:'Frecuencia de pago',value:p.frecuencia},
     {label:'Cantidad de cuotas',value:String(p.cuotas)},
     {label:'Valor de cada cuota',value:fmt(p.capitalCuota+p.interesCuota)},
-    {label:'Primera cuota vence',value:formatDate(addDays(p.fechaDesembolso,p.frecuencia==='Semanal'?7:15))},
+    {label:'Primera cuota vence',value:formatDate(addDays(p.fechaDesembolso,freqDias(p.frecuencia)))},
     {label:'TOTAL A PAGAR',value:fmt(p.totalCobrar),total:true},
   ];
   abrirRecibo('Contrato de Préstamo',filas,'',cli?cli.telefono||'':'');
@@ -2150,8 +2489,10 @@ function exportarJSON(){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
   a.download='respaldo-prestamos-'+today()+'.json';a.click();
   audit('Exportar respaldo','Respaldo completo exportado','');
+  localStorage.setItem('pao_last_backup', new Date().toISOString());
   save();
   toast('Respaldo completo descargado');
+  checkBackupAlert();
 }
 function importarJSON(e){
   const file=e.target.files[0];if(!file)return;
@@ -2223,7 +2564,7 @@ function exportarExcel(){
   const calData=[['Préstamo','Cliente','# Cuota','Fecha Venc.','Cap. Prog.','Int. Prog.','Total','Estado']];
   DB.prestamos.forEach(p=>{
     const c=DB.clientes.find(x=>x.id===p.clienteId);
-    const freq=p.frecuencia==='Semanal'?7:15;
+    const freq=freqDias(p.frecuencia);
     const capTotal=DB.pagos.filter(pg=>pg.prestamoId===p.id).reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
     const intTotal=DB.pagos.filter(pg=>pg.prestamoId===p.id).reduce((s,pg)=>s+pg.interesAplicado,0);
     for(let i=0;i<p.cuotas;i++){
