@@ -343,6 +343,7 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
     <div class="nav-right">
       <span class="nav-user" id="nav-user"></span>
       <button class="theme-toggle" onclick="toggleTheme()" title="Cambiar tema" id="theme-btn">🌙</button>
+      <button class="nav-btn" id="btn-sync-manual" onclick="window._paoPullManual()" title="Sincronizar datos desde la nube" style="display:none;padding:5px 8px">🔄</button>
       <button class="nav-btn" onclick="doLogout()">Salir</button>
       <button class="nav-hamburger" id="nav-hamburger" onclick="toggleMobileMenu()">☰</button>
     </div>
@@ -1094,6 +1095,8 @@ function doLogout(){
   if(!confirm('¿Cerrar sesión?')) return;
   CURRENT_USER=null;
   sessionStorage.removeItem('pao_session');
+  const syncBtn = document.getElementById('btn-sync-manual');
+  if(syncBtn) syncBtn.style.display='none';
   document.getElementById('app').classList.remove('visible');
   document.getElementById('login-wrap').style.display='flex';
   document.getElementById('l-user').value='';
@@ -1125,6 +1128,9 @@ function applyRole(){
     el.style.display=isAdmin?'':'none';
   });
   document.getElementById('nav-user').innerHTML=`${CURRENT_USER.username} <span class="role-badge ${isAdmin?'role-admin':'role-cobrador'}">${isAdmin?'Admin':'Cobrador'}</span>`;
+  // Mostrar botón de sync si hay código de activación
+  const syncBtn = document.getElementById('btn-sync-manual');
+  if(syncBtn && localStorage.getItem('pao_codigo_activacion')) syncBtn.style.display='';
   // cobrador lands on pagos
   if(!isAdmin) goTo('pagos');
 }
@@ -3550,6 +3556,32 @@ function _refrescarVista(){
     if(id==='page-miDia' && typeof renderMiDia==='function') renderMiDia();
   }catch(e){}
 }
+
+// ── PULL MANUAL (botón 🔄 en navbar) ────────────────────────
+window._paoPullManual = async function(){
+  const btn = document.getElementById('btn-sync-manual');
+  const orgId = localStorage.getItem('pao_codigo_activacion');
+  if(!orgId || !navigator.onLine){
+    if(typeof toast==='function') toast('Sin conexión a internet','err');
+    return;
+  }
+  if(btn){ btn.textContent='⏳'; btn.disabled=true; }
+  try{
+    // Forzar pull ignorando el timer
+    localStorage.removeItem('pao_last_pull');
+    const huboCambios = await _pullRemoto(orgId);
+    if(huboCambios){
+      _refrescarVista();
+      if(typeof toast==='function') toast('✅ Datos sincronizados');
+    } else {
+      if(typeof toast==='function') toast('Ya tienes los datos más recientes');
+    }
+  }catch(e){
+    if(typeof toast==='function') toast('Error al sincronizar','err');
+  }finally{
+    if(btn){ btn.textContent='🔄'; btn.disabled=false; }
+  }
+};
 
 window._paoAplicarSync = function(){
   const banner = document.getElementById(SYNC_BANNER_ID);
