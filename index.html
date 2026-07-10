@@ -3483,14 +3483,15 @@ async function _pullRemoto(orgId){
     }catch(e){ return null; } // null = error (no confundir con vacío)
   }
 
-  const [clientes, prestamos, pagos] = await Promise.all([
-    _getCol('clientes'), _getCol('prestamos'), _getCol('pagos')
+  const [clientes, prestamos, pagos, configDocs] = await Promise.all([
+    _getCol('clientes'), _getCol('prestamos'), _getCol('pagos'), _getCol('config')
   ]);
 
   // Si cualquier colección falló (reglas, red), no aplicar nada
   if(clientes === null || prestamos === null || pagos === null) return false;
 
-  const db = window._paoGetDB && window._paoGetDB();
+  const db  = window._paoGetDB  && window._paoGetDB();
+  const cfg = window._paoGetCFG && window._paoGetCFG();
   if(!db) return false;
 
   // Contar cambios reales antes de aplicar
@@ -3516,6 +3517,23 @@ async function _pullRemoto(orgId){
     pagos: db.pagos,
     bitacora: db.bitacora || []
   }));
+
+  // Aplicar config remota si existe y es más reciente
+  if(configDocs && configDocs.length > 0 && cfg){
+    const cfgRemota = configDocs[0];
+    const { _ts, ...cfgData } = cfgRemota;
+    // Solo actualizar si el remoto es más reciente
+    if(!cfg._ts || (_ts && _ts > cfg._ts)){
+      Object.assign(cfg, cfgData);
+      localStorage.setItem('pao_cfg', JSON.stringify(cfg));
+      // Aplicar cambios visibles de config en pantalla
+      if(typeof applyBranding === 'function') applyBranding();
+      if(typeof applyTheme === 'function') applyTheme(cfg.theme);
+      document.title = cfg.empresa || 'Préstamos a la Orden';
+      const brand = document.getElementById('nav-brand');
+      if(brand) brand.textContent = cfg.empresa || 'Préstamos a la Orden';
+    }
+  }
 
   _marcarPull();
 
