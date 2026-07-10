@@ -1530,7 +1530,7 @@ function preCalc(){
   document.getElementById('c-icuota').textContent=fmt(intCalc/cuotas);
 }
 
-function preToggleTipo(){\
+function preToggleTipo(){
   const tipo = document.getElementById('pre-tipo').value;
   const esAbierto = tipo === 'Abierto';
   document.getElementById('pre-cuotas-wrap').style.display = esAbierto ? 'none' : '';
@@ -3534,7 +3534,7 @@ function _mostrarBannerSync(){
     banner.style.cssText = 'position:fixed;top:56px;left:0;right:0;background:#1a3a5c;color:#fff;text-align:center;padding:10px 16px;font-size:13px;z-index:999;display:flex;align-items:center;justify-content:center;gap:12px';
     document.body.appendChild(banner);
   }
-  banner.innerHTML = '🔄 Hay datos nuevos desde otro dispositivo. <button onclick="window._paoAplicarSync()" style="background:#fff;color:#1a3a5c;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:12px">Actualizar ahora</button> <button onclick="document.getElementById('pao-sync-banner').remove()" style="background:transparent;color:rgba(255,255,255,.7);border:none;cursor:pointer;font-size:18px;padding:0 4px">×</button>';
+  banner.innerHTML = `🔄 Hay datos nuevos desde otro dispositivo. <button onclick="window._paoAplicarSync()" style="background:#fff;color:#1a3a5c;border:none;border-radius:6px;padding:4px 12px;font-weight:700;cursor:pointer;font-size:12px">Actualizar ahora</button> <button onclick="document.getElementById('pao-sync-banner').remove()" style="background:transparent;color:rgba(255,255,255,.7);border:none;cursor:pointer;font-size:18px;padding:0 4px">×</button>`;
   banner.style.display = 'flex';
 }
 
