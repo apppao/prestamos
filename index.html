@@ -997,19 +997,26 @@ function calcularMora(p){
   return {enMora,dias,recargo,cuotaFecha:cuota.fecha};
 }
 function actualizarMoraAutomatica(){
-  let cambios=0;
+  const cambiados=[];
   DB.prestamos.forEach(p=>{
     if(p.estado!=='Activo'&&p.estado!=='Moroso') return;
     const {enMora}=calcularMora(p);
-    if(enMora && p.estado==='Activo'){p.estado='Moroso';cambios++;}
+    if(enMora && p.estado==='Activo'){p.estado='Moroso';p._ts=Date.now();cambiados.push(p);}
     else if(!enMora && p.estado==='Moroso'){
       const cuota=getProximaCuotaPendiente(p);
       if(!cuota) p.estado='Finalizado';
       else p.estado='Activo';
-      cambios++;
+      p._ts=Date.now();
+      cambiados.push(p);
     }
   });
-  if(cambios>0) save('prestamos', null);
+  if(cambiados.length>0){
+    localStorage.setItem('pao_data',JSON.stringify(DB));
+    // Solo sincronizar los préstamos que realmente cambiaron — no todos
+    if(typeof window._paoSync==='function'){
+      cambiados.forEach(p => window._paoSync('prestamos', p.id));
+    }
+  }
 }
 function saveConfig(){
   CONFIG._ts = Date.now(); // marcar timestamp para comparación en pull
@@ -1509,7 +1516,9 @@ function borrarCliente(id){
   DB.clientes=DB.clientes.filter(x=>x.id!==id);
   audit('Borrar cliente',`Cliente eliminado: ${c.nombre}`,id);
   if(typeof window._paoMarcarBorrado==='function') window._paoMarcarBorrado('clientes',id);
-  save('clientes', null);toast('Cliente eliminado');renderTablaClientes();actualizarSelectsClientes();
+  // Solo guardar en localStorage, _paoMarcarBorrado ya maneja Firestore
+  localStorage.setItem('pao_data',JSON.stringify(DB));
+  toast('Cliente eliminado');renderTablaClientes();actualizarSelectsClientes();
 }
 
 function actualizarSelectsClientes(){
@@ -2173,6 +2182,7 @@ function guardarPagoAbierto(p){
 
   // Actualizar capital pendiente en el préstamo
   p.capitalPendiente = nuevoCapital;
+  p._ts = Date.now(); // marcar timestamp para sync
 
   // Si el capital queda en cero, finalizar el préstamo
   if(nuevoCapital < 0.01){
@@ -2186,6 +2196,8 @@ function guardarPagoAbierto(p){
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
   audit('Registrar pago',`Pago ${fmt(monto)} al préstamo abierto de ${cli?cli.nombre:'?'}`,pagId);
   save('pagos', pagId);
+  // Sincronizar también el préstamo porque cambió capitalPendiente y posiblemente estado
+  if(typeof window._paoSync==='function') window._paoSync('prestamos', p.id);
   document.getElementById('pag-monto').value='';
   document.getElementById('pag-obs').value='';
   // Actualizar preview con el nuevo estado
@@ -2349,6 +2361,11 @@ function confirmarAnulacion(){
   const cli=DB.clientes.find(c=>c.id===pg.clienteId);
   audit('Anular pago',`Anulación pago ${fmt(pg.monto)} de ${cli?cli.nombre:'?'} — Motivo: ${motivoFinal}`,pagId);
   save('pagos', pagId);
+  // Si el préstamo cambió de estado al anular, sincronizarlo también
+  if(p && typeof window._paoSync==='function'){
+    p._ts = Date.now();
+    window._paoSync('prestamos', p.id);
+  }
   cerrarModal('modal-anular-pago');
   if(prestamoSeleccionado&&prestamoSeleccionado.id===pg.prestamoId) renderHistorialPrestamo(pg.prestamoId);
   toast('Pago anulado correctamente');
@@ -3201,13 +3218,19 @@ async function validarActivacion(){
     localStorage.setItem('pao_codigo_activacion',codigo.trim().toUpperCase());
 
     let recuperado=false, errorRecuperacion=false;
-    if(typeof window._paoRecuperar==='function'){
-      statusEl.textContent='Buscando datos en la nube...';
-      try{
-        recuperado = await window._paoRecuperar(codigo.trim().toUpperCase());
-      }catch(e){
-        errorRecuperacion=true;
+    statusEl.textContent='Buscando datos en la nube...';
+    try{
+      // Esperar hasta 5 segundos a que el módulo sync esté listo
+      let intentos=0;
+      while(typeof window._paoRecuperar!=='function' && intentos<50){
+        await new Promise(r=>setTimeout(r,100));
+        intentos++;
       }
+      if(typeof window._paoRecuperar==='function'){
+        recuperado = await window._paoRecuperar(codigo.trim().toUpperCase());
+      }
+    }catch(e){
+      errorRecuperacion=true;
     }
     statusEl.textContent='';
 
