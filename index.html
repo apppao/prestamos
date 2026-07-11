@@ -1012,6 +1012,7 @@ function actualizarMoraAutomatica(){
   if(cambios>0) save('prestamos', null);
 }
 function saveConfig(){
+  CONFIG._ts = Date.now(); // marcar timestamp para comparación en pull
   localStorage.setItem('pao_cfg',JSON.stringify(CONFIG));
   if(typeof window._paoSyncConfig==='function') window._paoSyncConfig(CONFIG);
 }
@@ -1507,6 +1508,7 @@ function borrarCliente(id){
   if(!confirm(`¿Borrar a ${c.nombre}? Esta acción no se puede deshacer.`))return;
   DB.clientes=DB.clientes.filter(x=>x.id!==id);
   audit('Borrar cliente',`Cliente eliminado: ${c.nombre}`,id);
+  if(typeof window._paoMarcarBorrado==='function') window._paoMarcarBorrado('clientes',id);
   save('clientes', null);toast('Cliente eliminado');renderTablaClientes();actualizarSelectsClientes();
 }
 
@@ -3300,7 +3302,15 @@ function _enqueue(orgId, col, docId, payload){
   const q = _qGet();
   const idx = docId ? q.findIndex(x => x.col===col && x.docId===docId) : -1;
   const entry = { orgId, col, docId, payload, ts: Date.now() };
-  if(idx >= 0) q[idx] = entry; else q.push(entry);
+  if(idx >= 0){
+    // Solo reemplazar si el nuevo payload es más reciente
+    const existing = q[idx];
+    const newTs = payload._ts || entry.ts;
+    const oldTs = existing.payload._ts || existing.ts;
+    if(newTs >= oldTs) q[idx] = entry;
+  } else {
+    q.push(entry);
+  }
   _qSet(q);
 }
 
@@ -3459,18 +3469,21 @@ function _marcarPull(){
 }
 
 // Aplica un array de docs remotos a una colección local
-function _mergear(local, remotos, clave='id'){
+function _mergear(localArr, remotos, clave='id'){
   const mapa = {};
-  local.forEach(x => mapa[x[clave]] = x);
+  // Poblar mapa con datos locales
+  localArr.forEach(x => mapa[x[clave]] = x);
+  // Aplicar remotos: gana el más reciente según _ts, ignorar borrados
   remotos.forEach(r => {
+    if(r._borrado) return; // ignorar registros marcados como borrados
     const { _ts, ...item } = r;
-    const local = mapa[item[clave]];
-    // Gana el más reciente según _ts
-    if(!local || (item._ts && (!local._ts || item._ts > local._ts))){
+    const existente = mapa[item[clave]];
+    if(!existente || (_ts && (!existente._ts || _ts > existente._ts))){
       mapa[item[clave]] = item;
     }
   });
-  return Object.values(mapa);
+  // Excluir del resultado los que están marcados como borrados localmente
+  return Object.values(mapa).filter(x => !x._borrado);
 }
 
 async function _pullRemoto(orgId){
@@ -3495,10 +3508,11 @@ async function _pullRemoto(orgId){
   if(!db) return false;
 
   // Contar cambios reales antes de aplicar
+  // Snapshot antes del merge para detectar cualquier cambio de contenido
   const antesStr = JSON.stringify({
-    c: db.clientes.length,
-    p: db.prestamos.length,
-    pg: db.pagos.length
+    clientes:  db.clientes.map(x=>x._ts||x.id),
+    prestamos: db.prestamos.map(x=>x._ts||x.id),
+    pagos:     db.pagos.map(x=>x._ts||x.id)
   });
 
   db.clientes  = _mergear(db.clientes,  clientes);
@@ -3506,9 +3520,9 @@ async function _pullRemoto(orgId){
   db.pagos     = _mergear(db.pagos,     pagos);
 
   const despuesStr = JSON.stringify({
-    c: db.clientes.length,
-    p: db.prestamos.length,
-    pg: db.pagos.length
+    clientes:  db.clientes.map(x=>x._ts||x.id),
+    prestamos: db.prestamos.map(x=>x._ts||x.id),
+    pagos:     db.pagos.map(x=>x._ts||x.id)
   });
 
   localStorage.setItem('pao_data', JSON.stringify({
@@ -3622,10 +3636,25 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// ── MARCAR REGISTRO COMO BORRADO EN FIRESTORE ───────────────
+// En vez de borrar el documento (que requiere deleteDoc y permisos extras),
+// lo marcamos con _borrado:true. _mergear los ignorará al hacer pull.
+async function _marcarBorrado(col, docId){
+  const orgId = localStorage.getItem('pao_codigo_activacion');
+  if(!orgId || !docId) return;
+  try{
+    await _write(orgId, col, docId, { id: docId, _borrado: true, _ts: Date.now() });
+  }catch(e){
+    // Si falla (sin red), encolar
+    _enqueue(orgId, col, docId, { id: docId, _borrado: true, _ts: Date.now() });
+  }
+}
+
 // ── EXPONER AL SCOPE GLOBAL ───────────────────────────────────
-window._paoSync       = _sync;
-window._paoSyncConfig = _syncConfig;
-window._paoRecuperar  = _recuperar;
+window._paoSync          = _sync;
+window._paoSyncConfig    = _syncConfig;
+window._paoRecuperar     = _recuperar;
+window._paoMarcarBorrado = _marcarBorrado;
 // Nota: window._paoGetDB y window._paoGetCFG son definidos por el script
 // principal (justo después de inicializar DB y CONFIG), no aquí.
 
