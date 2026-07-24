@@ -1954,9 +1954,22 @@ function abrirEditPrestamo(pid){
   document.getElementById('edit-pre-monto').value=p.monto;
   document.getElementById('edit-pre-interes').value=p.interesPct;
   document.getElementById('edit-pre-freq').value=p.frecuencia;
-  document.getElementById('edit-pre-cuotas').value=p.cuotas;
+  document.getElementById('edit-pre-cuotas').value=p.cuotas||'';
   document.getElementById('edit-pre-fecha').value=p.fechaDesembolso;
   document.getElementById('edit-pre-primer-pago').value=p.fechaPrimerPago||'';
+  // Mostrar u ocultar campos según tipo de préstamo
+  const esAbierto = p.tipo==='Abierto';
+  const cuotasWrap=document.getElementById('edit-pre-cuotas').closest('.form-group');
+  const primerPagoWrap=document.getElementById('edit-pre-primer-pago').closest('.form-group');
+  if(cuotasWrap) cuotasWrap.style.display=esAbierto?'none':'';
+  if(primerPagoWrap) primerPagoWrap.style.display=esAbierto?'none':'';
+  if(esAbierto){
+    // Mostrar capital pendiente actual como info
+    const capPend = p.capitalPendiente||p.monto;
+    document.getElementById('edit-pre-monto').title=`Capital pendiente actual: ${capPend}`;
+  } else {
+    document.getElementById('edit-pre-monto').title='';
+  }
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
   document.getElementById('edit-pre-cliente-nombre').textContent=cli?cli.nombre:'?';
   const tienePagos=getPagosPresta(pid).filter(pg=>pg.estado!=='Anulado').length>0;
@@ -1973,17 +1986,34 @@ function guardarEditPrestamo(){
   const cuotas=parseInt(document.getElementById('edit-pre-cuotas').value)||0;
   const fecha=document.getElementById('edit-pre-fecha').value;
   const primerPagoEdit=document.getElementById('edit-pre-primer-pago').value||'';
-  if(!monto||!cuotas){toast('Completa monto y cuotas','err');return}
-  if(primerPagoEdit&&primerPagoEdit<=fecha){toast('La fecha del primer pago debe ser posterior al desembolso','err');return}
-  const intCalc=monto*(pct/100);
-  const total=monto+intCalc;
+  if(!monto){toast('Ingresa el monto','err');return}
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
   audit('Editar préstamo',`Préstamo de ${cli?cli.nombre:'?'} modificado`,pid);
-  p.monto=monto;p.interesPct=pct;p.interesCalc=intCalc;p.totalCobrar=total;
-  p.frecuencia=freq;p.cuotas=cuotas;
-  p.capitalCuota=monto/cuotas;p.interesCuota=intCalc/cuotas;
-  p.fechaDesembolso=fecha;
-  if(primerPagoEdit) p.fechaPrimerPago=primerPagoEdit; else delete p.fechaPrimerPago;
+
+  if(p.tipo==='Abierto'){
+    // Préstamo Abierto: solo actualizar monto, interés, frecuencia y capital pendiente
+    // Calcular la diferencia entre monto nuevo y viejo para ajustar el capital pendiente
+    const diff = monto - p.monto;
+    p.monto=monto;
+    p.interesPct=pct;
+    p.frecuencia=freq;
+    p.fechaDesembolso=fecha;
+    p._ts=Date.now();
+    // Ajustar capitalPendiente proporcionalmente al cambio de monto
+    p.capitalPendiente = Math.max(0, (p.capitalPendiente||p.monto) + diff);
+  } else {
+    // Préstamo por Cuotas: comportamiento original
+    if(!cuotas){toast('Completa monto y cuotas','err');return}
+    if(primerPagoEdit&&primerPagoEdit<=fecha){toast('La fecha del primer pago debe ser posterior al desembolso','err');return}
+    const intCalc=monto*(pct/100);
+    const total=monto+intCalc;
+    p.monto=monto;p.interesPct=pct;p.interesCalc=intCalc;p.totalCobrar=total;
+    p.frecuencia=freq;p.cuotas=cuotas;
+    p.capitalCuota=monto/cuotas;p.interesCuota=intCalc/cuotas;
+    p.fechaDesembolso=fecha;
+    p._ts=Date.now();
+    if(primerPagoEdit) p.fechaPrimerPago=primerPagoEdit; else delete p.fechaPrimerPago;
+  }
   save('prestamos', pid);cerrarModal('modal-edit-pre');
   renderTablaPrestamos();
   toast('Préstamo actualizado');
