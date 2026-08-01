@@ -1611,10 +1611,10 @@ function guardarPrestamo(){
   preToggleTipo();
   document.getElementById('pre-calc-box').style.display='none';
   const cliNP=DB.clientes.find(x=>x.id===cliId);
-  audit('Crear préstamo',`Préstamo ${fmt(total)} a ${cliNP?cliNP.nombre:'?'}`,pid);
+  const _auditMonto=tipo==='Abierto'?fmt(monto):(typeof total!=='undefined'?fmt(total):fmt(monto));
+  audit('Crear préstamo',`Préstamo ${_auditMonto} a ${cliNP?cliNP.nombre:'?'}`,pid);
   save('prestamos', pid);
-  toast('Préstamo registrado');
-  generarReciboDesembolso(pid);
+  mostrarOpcionesDesembolso(pid);
 }
 
 function renderPrestamos(){actualizarSelectsClientes()}
@@ -1878,6 +1878,11 @@ function abrirDetallePrestamo(pid){
     </table></div>
   </details>`;
 
+  // Agregar botón compartir estado por WhatsApp
+  html += `<div class="btn-row" style="margin-top:10px">
+    <button class="btn" onclick="compartirEstadoPrestamo('${p.id}')">📲 Compartir estado</button>
+    <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');generarReciboDesembolsoPDF('${p.id}')">🖨️ Ver contrato PDF</button>
+  </div>`;
   document.getElementById('detpre-contenido').innerHTML=html;
   document.getElementById('modal-detalle-prestamo').classList.add('open');
   aplicarVisibilidadAdmin();
@@ -1939,6 +1944,10 @@ function abrirDetallePrestamoAbierto(p){
     <div class="btn-row" style="margin-top:16px">
       <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');document.getElementById('pag-cliente').value='${p.clienteId}';cargarPrestamosCliente();">💳 Ir a registrar pago</button>
       <button class="btn btn-primary admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirEditPrestamo('${p.id}')">✏️ Editar</button>
+    </div>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn" onclick="compartirEstadoPrestamo('${p.id}')">📲 Compartir estado</button>
+      <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');generarReciboDesembolsoPDF('${p.id}')">🖨️ Ver contrato PDF</button>
     </div>`;
 
   document.getElementById('detpre-contenido').innerHTML=html;
@@ -1954,22 +1963,9 @@ function abrirEditPrestamo(pid){
   document.getElementById('edit-pre-monto').value=p.monto;
   document.getElementById('edit-pre-interes').value=p.interesPct;
   document.getElementById('edit-pre-freq').value=p.frecuencia;
-  document.getElementById('edit-pre-cuotas').value=p.cuotas||'';
+  document.getElementById('edit-pre-cuotas').value=p.cuotas;
   document.getElementById('edit-pre-fecha').value=p.fechaDesembolso;
   document.getElementById('edit-pre-primer-pago').value=p.fechaPrimerPago||'';
-  // Mostrar u ocultar campos según tipo de préstamo
-  const esAbierto = p.tipo==='Abierto';
-  const cuotasWrap=document.getElementById('edit-pre-cuotas').closest('.form-group');
-  const primerPagoWrap=document.getElementById('edit-pre-primer-pago').closest('.form-group');
-  if(cuotasWrap) cuotasWrap.style.display=esAbierto?'none':'';
-  if(primerPagoWrap) primerPagoWrap.style.display=esAbierto?'none':'';
-  if(esAbierto){
-    // Mostrar capital pendiente actual como info
-    const capPend = p.capitalPendiente||p.monto;
-    document.getElementById('edit-pre-monto').title=`Capital pendiente actual: ${capPend}`;
-  } else {
-    document.getElementById('edit-pre-monto').title='';
-  }
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
   document.getElementById('edit-pre-cliente-nombre').textContent=cli?cli.nombre:'?';
   const tienePagos=getPagosPresta(pid).filter(pg=>pg.estado!=='Anulado').length>0;
@@ -1986,34 +1982,17 @@ function guardarEditPrestamo(){
   const cuotas=parseInt(document.getElementById('edit-pre-cuotas').value)||0;
   const fecha=document.getElementById('edit-pre-fecha').value;
   const primerPagoEdit=document.getElementById('edit-pre-primer-pago').value||'';
-  if(!monto){toast('Ingresa el monto','err');return}
+  if(!monto||!cuotas){toast('Completa monto y cuotas','err');return}
+  if(primerPagoEdit&&primerPagoEdit<=fecha){toast('La fecha del primer pago debe ser posterior al desembolso','err');return}
+  const intCalc=monto*(pct/100);
+  const total=monto+intCalc;
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
   audit('Editar préstamo',`Préstamo de ${cli?cli.nombre:'?'} modificado`,pid);
-
-  if(p.tipo==='Abierto'){
-    // Préstamo Abierto: solo actualizar monto, interés, frecuencia y capital pendiente
-    // Calcular la diferencia entre monto nuevo y viejo para ajustar el capital pendiente
-    const diff = monto - p.monto;
-    p.monto=monto;
-    p.interesPct=pct;
-    p.frecuencia=freq;
-    p.fechaDesembolso=fecha;
-    p._ts=Date.now();
-    // Ajustar capitalPendiente proporcionalmente al cambio de monto
-    p.capitalPendiente = Math.max(0, (p.capitalPendiente||p.monto) + diff);
-  } else {
-    // Préstamo por Cuotas: comportamiento original
-    if(!cuotas){toast('Completa monto y cuotas','err');return}
-    if(primerPagoEdit&&primerPagoEdit<=fecha){toast('La fecha del primer pago debe ser posterior al desembolso','err');return}
-    const intCalc=monto*(pct/100);
-    const total=monto+intCalc;
-    p.monto=monto;p.interesPct=pct;p.interesCalc=intCalc;p.totalCobrar=total;
-    p.frecuencia=freq;p.cuotas=cuotas;
-    p.capitalCuota=monto/cuotas;p.interesCuota=intCalc/cuotas;
-    p.fechaDesembolso=fecha;
-    p._ts=Date.now();
-    if(primerPagoEdit) p.fechaPrimerPago=primerPagoEdit; else delete p.fechaPrimerPago;
-  }
+  p.monto=monto;p.interesPct=pct;p.interesCalc=intCalc;p.totalCobrar=total;
+  p.frecuencia=freq;p.cuotas=cuotas;
+  p.capitalCuota=monto/cuotas;p.interesCuota=intCalc/cuotas;
+  p.fechaDesembolso=fecha;
+  if(primerPagoEdit) p.fechaPrimerPago=primerPagoEdit; else delete p.fechaPrimerPago;
   save('prestamos', pid);cerrarModal('modal-edit-pre');
   renderTablaPrestamos();
   toast('Préstamo actualizado');
@@ -2774,21 +2753,290 @@ function exportarExpedienteCliente(){
   }
 }
 
+// ── MODAL OPCIONES DESEMBOLSO ────────────────────────────────
+let _pidDesembolsoActual = null;
+
+function mostrarOpcionesDesembolso(pid){
+  _pidDesembolsoActual = pid;
+  const p = DB.prestamos.find(x=>x.id===pid);
+  const cli = p ? DB.clientes.find(c=>c.id===p.clienteId) : null;
+  const esAbierto = p && p.tipo==='Abierto';
+  const resumen = document.getElementById('desembolso-resumen');
+  if(resumen && p && cli){
+    resumen.innerHTML = `
+      <strong style="font-size:14px">${cli.nombre}</strong><br>
+      💵 Monto: <strong>${fmt(p.monto)}</strong><br>
+      📊 Interés: ${p.interesPct}% · ${p.frecuencia}<br>
+      ${esAbierto
+        ? '📂 Modalidad: <strong>Préstamo Abierto</strong>'
+        : `📆 ${p.cuotas} cuotas de <strong>${fmt(p.capitalCuota+p.interesCuota)}</strong> · Total: <strong>${fmt(p.totalCobrar)}</strong>`
+      }`;
+  }
+  const btnWa = document.getElementById('btn-desembolso-wa');
+  if(btnWa) btnWa.style.opacity = (cli&&cli.telefono)?'1':'0.5';
+  document.getElementById('modal-desembolso-opciones').classList.add('open');
+}
+
+function accionDesembolso(accion){
+  const pid = _pidDesembolsoActual;
+  if(!pid) return;
+  // NO cerrar el modal al ver recibo — así el usuario puede seguir usando las otras opciones
+  if(accion==='ver'){
+    generarReciboDesembolso(pid); // abre en ventana nueva, modal sigue abierto
+  } else if(accion==='pdf'){
+    generarReciboDesembolsoPDF(pid); // abre en ventana nueva, modal sigue abierto
+  } else if(accion==='whatsapp'){
+    enviarDesembolsoWhatsApp(pid);
+  }
+}
+
+function generarReciboDesembolsoPDF(pid){
+  const p = DB.prestamos.find(x=>x.id===pid); if(!p) return;
+  const cli = DB.clientes.find(c=>c.id===p.clienteId);
+  const cfg = CFG();
+  const esAbierto = p.tipo==='Abierto';
+  const ahora = new Date();
+  const fechaHora = ahora.toLocaleDateString('es-DO',{day:'2-digit',month:'2-digit',year:'numeric'})
+    + ' ' + ahora.toLocaleTimeString('es-DO',{hour:'2-digit',minute:'2-digit'});
+  const logoTag = cfg.logo
+    ? `<img src="${cfg.logo}" style="height:55px;max-width:150px;object-fit:contain">`
+    : `<div style="font-size:18px;font-weight:800;color:#1a3a5c">${cfg.empresa||'Préstamos a la Orden'}</div>`;
+
+  // Tabla de amortización o mensaje para abierto
+  let tablaAmort = '';
+  if(esAbierto){
+    tablaAmort = `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px;margin-top:20px;font-size:12px;color:#0c4a6e">
+      <strong>ℹ️ Préstamo de Modalidad Abierta</strong><br><br>
+      Este préstamo no tiene cuotas fijas. Los intereses se calculan sobre el saldo pendiente cada período
+      (${p.interesPct}% ${p.frecuencia.toLowerCase()}). El cliente puede realizar abonos parciales en cualquier
+      momento. Si el pago cubre solo el interés, el capital permanece igual. Si paga más, el excedente reduce
+      el capital y el próximo interés se calcula sobre el nuevo saldo.
+    </div>`;
+  } else {
+    const capitalCuota = p.capitalCuota||(p.monto/p.cuotas);
+    const interesCuota = p.interesCuota||((p.interesCalc||0)/p.cuotas);
+    const totalCuota = capitalCuota + interesCuota;
+    let saldo = p.monto;
+    let filas = '';
+    for(let i=1; i<=p.cuotas; i++){
+      const fecha = fechaCuota(p, i);
+      saldo = Math.max(0, saldo - capitalCuota);
+      filas += `<tr style="background:${i%2===0?'#f8fafc':'#fff'}">
+        <td style="text-align:center;padding:5px 7px">${i}</td>
+        <td style="padding:5px 7px">${formatDate(fecha)}</td>
+        <td style="text-align:right;padding:5px 7px">${fmt(capitalCuota)}</td>
+        <td style="text-align:right;padding:5px 7px">${fmt(interesCuota)}</td>
+        <td style="text-align:right;padding:5px 7px;font-weight:600">${fmt(totalCuota)}</td>
+        <td style="text-align:right;padding:5px 7px;color:#64748b">${fmt(saldo)}</td>
+      </tr>`;
+    }
+    tablaAmort = `<div style="margin-top:24px">
+      <div style="font-size:13px;font-weight:700;color:#1a3a5c;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #1a3a5c">Tabla de amortización</div>
+      <table style="width:100%;border-collapse:collapse;font-size:11px">
+        <thead><tr style="background:#1a3a5c;color:#fff">
+          <th style="padding:7px;text-align:center">Cuota</th>
+          <th style="padding:7px">Vencimiento</th>
+          <th style="padding:7px;text-align:right">Capital</th>
+          <th style="padding:7px;text-align:right">Interés</th>
+          <th style="padding:7px;text-align:right">Total</th>
+          <th style="padding:7px;text-align:right">Saldo</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot><tr style="background:#1a3a5c;color:#fff;font-weight:700">
+          <td colspan="2" style="padding:7px">TOTALES</td>
+          <td style="padding:7px;text-align:right">${fmt(p.monto)}</td>
+          <td style="padding:7px;text-align:right">${fmt(p.interesCalc||0)}</td>
+          <td style="padding:7px;text-align:right">${fmt(p.totalCobrar||p.monto)}</td>
+          <td style="padding:7px;text-align:right">—</td>
+        </tr></tfoot>
+      </table></div>`;
+  }
+
+  const html = `<!DOCTYPE html><html lang="es"><head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Contrato de Préstamo</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,sans-serif;font-size:13px;color:#1e293b;background:#f8fafc;padding:16px;max-width:720px;margin:0 auto}
+    .btn-bar{display:flex;gap:8px;margin-bottom:20px}
+    .btn-back{background:#1a3a5c;color:#fff;padding:11px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none}
+    .btn-print{background:#0f766e;color:#fff;padding:11px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none}
+    .doc{background:#fff;border-radius:10px;padding:28px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:3px solid #1a3a5c;margin-bottom:20px}
+    .empresa-info{font-size:12px;color:#64748b;margin-top:6px;line-height:1.8}
+    .doc-title h1{font-size:17px;color:#1a3a5c;font-weight:800;text-transform:uppercase;text-align:right}
+    .doc-title .meta{font-size:11px;color:#64748b;text-align:right;margin-top:5px;line-height:1.8}
+    .section-title{font-size:11px;font-weight:700;color:#1a3a5c;text-transform:uppercase;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid #e2e8f0;letter-spacing:.04em}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .field .label{font-size:11px;color:#64748b;margin-bottom:2px}
+    .field .value{font-weight:600;font-size:13px}
+    .totales{background:#f0f7ff;border-radius:8px;padding:14px;margin:16px 0}
+    .total-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+    .total-row.grande{font-size:16px;font-weight:800;color:#1a3a5c;border-top:2px solid #1a3a5c;margin-top:8px;padding-top:8px}
+    .firma{display:flex;justify-content:space-around;margin-top:40px;gap:24px}
+    .firma-line{flex:1;border-top:1px solid #64748b;text-align:center;padding-top:6px;font-size:11px;color:#64748b}
+    .footer{margin-top:20px;text-align:center;font-size:12px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:12px}
+    @media print{.btn-bar{display:none!important}body{background:#fff;padding:0}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body>
+  <div class="btn-bar">
+    <button class="btn-back" onclick="window.close()">← Volver</button>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+  </div>
+  <div class="doc">
+    <div class="header">
+      <div>${logoTag}<div class="empresa-info">${cfg.telefono?'📞 '+cfg.telefono+'<br>':''}${cfg.direccion?'📍 '+cfg.direccion:''}</div></div>
+      <div class="doc-title">
+        <h1>Contrato de Préstamo</h1>
+        <div class="meta">📅 ${fechaHora}<br>Ejecutado por: <strong>${CURRENT_USER?CURRENT_USER.username:'—'}</strong></div>
+      </div>
+    </div>
+    <div class="section-title">Datos del cliente</div>
+    <div class="grid2">
+      <div class="field"><div class="label">Nombre completo</div><div class="value">${cli?cli.nombre:'—'}</div></div>
+      <div class="field"><div class="label">Cédula</div><div class="value">${cli&&cli.cedula?cli.cedula:'—'}</div></div>
+      <div class="field"><div class="label">Teléfono</div><div class="value">${cli&&cli.telefono?cli.telefono:'—'}</div></div>
+      <div class="field"><div class="label">Dirección</div><div class="value">${cli&&cli.direccion?cli.direccion:'—'}</div></div>
+    </div>
+    <div class="section-title">Condiciones del préstamo</div>
+    <div class="grid2">
+      <div class="field"><div class="label">Modalidad</div><div class="value">${esAbierto?'Préstamo Abierto':'Por cuotas fijas'}</div></div>
+      <div class="field"><div class="label">Fecha de desembolso</div><div class="value">${formatDate(p.fechaDesembolso)}</div></div>
+      <div class="field"><div class="label">Frecuencia</div><div class="value">${p.frecuencia}</div></div>
+      <div class="field"><div class="label">Tasa de interés</div><div class="value">${p.interesPct}% por período</div></div>
+      ${!esAbierto?`
+      <div class="field"><div class="label">Número de cuotas</div><div class="value">${p.cuotas}</div></div>
+      <div class="field"><div class="label">Valor de cada cuota</div><div class="value">${fmt((p.capitalCuota||0)+(p.interesCuota||0))}</div></div>
+      <div class="field"><div class="label">Primera cuota vence</div><div class="value">${formatDate(fechaCuota(p,1))}</div></div>
+      `:''}
+    </div>
+    <div class="totales">
+      <div class="total-row"><span>Monto desembolsado</span><span>${fmt(p.monto)}</span></div>
+      ${!esAbierto?`<div class="total-row"><span>Total de intereses (${p.interesPct}%)</span><span>${fmt(p.interesCalc||0)}</span></div>`:''}
+      <div class="total-row grande"><span>${esAbierto?'CAPITAL DESEMBOLSADO':'TOTAL A PAGAR'}</span><span>${esAbierto?fmt(p.monto):fmt(p.totalCobrar||p.monto)}</span></div>
+    </div>
+    ${tablaAmort}
+    <div class="firma">
+      <div class="firma-line">Firma del prestamista</div>
+      <div class="firma-line">Firma del cliente</div>
+    </div>
+    <div class="footer">${cfg.mensajeRecibo||'Gracias por su confianza.'}</div>
+  </div></body></html>`;
+
+  const w = window.open('','_blank');
+  if(w){ w.document.write(html); w.document.close(); }
+  else {
+    const blob = new Blob([html],{type:'text/html'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `Contrato_${cli?cli.nombre.replace(/\s+/g,'_'):'cliente'}_${today()}.html`;
+    a.click();
+    toast('PDF descargado','warn');
+  }
+}
+
+function enviarDesembolsoWhatsApp(pid){
+  const p = DB.prestamos.find(x=>x.id===pid); if(!p) return;
+  const cli = DB.clientes.find(c=>c.id===p.clienteId);
+  const cfg = CFG();
+  const esAbierto = p.tipo==='Abierto';
+  const nombre = cli ? cli.nombre.split(' ')[0] : 'cliente';
+  const lineas = [
+    `Hola ${nombre}. 👋`,
+    ``,
+    `Le compartimos el comprobante del desembolso de su préstamo.`,
+    ``,
+    `📋 *DETALLE DEL PRÉSTAMO*`,
+    `_${cfg.empresa||'Préstamos a la Orden'}_`,
+    `━━━━━━━━━━━━━━━━`,
+    `💵 Monto: *${fmt(p.monto)}*`,
+    `📅 Fecha: ${formatDate(p.fechaDesembolso)}`,
+    `📊 Interés: ${p.interesPct}% · ${p.frecuencia}`,
+    esAbierto ? `📂 Modalidad: *Préstamo Abierto*`
+              : `📆 Cuotas: ${p.cuotas} de *${fmt((p.capitalCuota||0)+(p.interesCuota||0))}* c/u`,
+    !esAbierto ? `💰 Total a pagar: *${fmt(p.totalCobrar||p.monto)}*` : '',
+    `━━━━━━━━━━━━━━━━`,
+    ``,
+    `En el documento encontrará el detalle del préstamo${esAbierto?'':' y su cronograma de pagos'}.`,
+    ``,
+    `Gracias por confiar en nosotros. 🙏`,
+    cfg.telefono ? `📞 ${cfg.telefono}` : ''
+  ].filter(l => l !== null);
+  const msgText = encodeURIComponent(lineas.join('\n'));
+  const tel = (cli&&cli.telefono?cli.telefono:'').replace(/\D/g,'');
+  const telP = tel.length===10?'1'+tel:tel;
+  window.open(tel?`https://wa.me/${telP}?text=${msgText}`:`https://wa.me/?text=${msgText}`,'_blank');
+}
+
+function compartirEstadoPrestamo(pid){
+  const p = DB.prestamos.find(x=>x.id===pid); if(!p) return;
+  const cli = DB.clientes.find(c=>c.id===p.clienteId);
+  const cfg = CFG();
+  const esAbierto = p.tipo==='Abierto';
+  const nombre = cli ? cli.nombre.split(' ')[0] : 'cliente';
+  let lineas;
+  if(esAbierto){
+    const cap = p.capitalPendiente||p.monto;
+    const intProx = cap*(p.interesPct/100);
+    lineas = [
+      `Hola ${nombre}. 👋`,``,
+      `📋 *ESTADO DE SU PRÉSTAMO*`,
+      `_${cfg.empresa||'Préstamos a la Orden'}_`,
+      `━━━━━━━━━━━━━━━━`,
+      `💵 Capital original: ${fmt(p.monto)}`,
+      `📉 Capital pendiente: *${fmt(cap)}*`,
+      `📊 Interés próximo (${p.interesPct}%): ${fmt(intProx)}`,
+      `💳 Pago mínimo: *${fmt(intProx)}*`,
+      `📂 Estado: ${p.estado}`,
+      `━━━━━━━━━━━━━━━━`,
+      ``,`Gracias por su puntualidad. 🙏`,
+      cfg.telefono?`📞 ${cfg.telefono}`:''
+    ];
+  } else {
+    const stats = calcPrestamoStats(p);
+    const saldo = Math.max(0,(p.totalCobrar||p.monto)-stats.totalPagado);
+    const cuota = getProximaCuotaPendiente(p);
+    lineas = [
+      `Hola ${nombre}. 👋`,``,
+      `📋 *ESTADO DE SU PRÉSTAMO*`,
+      `_${cfg.empresa||'Préstamos a la Orden'}_`,
+      `━━━━━━━━━━━━━━━━`,
+      `💵 Total del préstamo: ${fmt(p.totalCobrar||p.monto)}`,
+      `✅ Total pagado: ${fmt(stats.totalPagado)} (${stats.pct}%)`,
+      `📉 Saldo pendiente: *${fmt(saldo)}*`,
+      cuota?`📅 Próxima cuota: *${fmt((p.capitalCuota||0)+(p.interesCuota||0))}* — ${formatDate(cuota.fecha)}`:'✅ Préstamo al día',
+      `📂 Estado: ${p.estado}`,
+      `━━━━━━━━━━━━━━━━`,
+      ``,`Gracias por su puntualidad. 🙏`,
+      cfg.telefono?`📞 ${cfg.telefono}`:''
+    ];
+  }
+  const msgText = encodeURIComponent(lineas.filter(l=>l!==null&&l!==undefined).join('\n'));
+  const tel = (cli&&cli.telefono?cli.telefono:'').replace(/\D/g,'');
+  const telP = tel.length===10?'1'+tel:tel;
+  window.open(tel?`https://wa.me/${telP}?text=${msgText}`:`https://wa.me/?text=${msgText}`,'_blank');
+}
+
 function generarReciboDesembolso(pid){
   const p=DB.prestamos.find(x=>x.id===pid);if(!p)return;
   const cli=DB.clientes.find(c=>c.id===p.clienteId);
+  const esAbierto=p.tipo==='Abierto';
   const filas=[
     {label:'Cliente',value:cli?cli.nombre:'—'},
     {label:'Cédula',value:cli&&cli.cedula?cli.cedula:'—'},
     {label:'Teléfono',value:cli&&cli.telefono?cli.telefono:'—'},
     {label:'Fecha de desembolso',value:formatDate(p.fechaDesembolso)},
+    {label:'Modalidad',value:esAbierto?'Préstamo Abierto':'Por cuotas fijas'},
     {label:'Monto prestado',value:fmt(p.monto)},
-    {label:`Interés (${p.interesPct}%)`,value:fmt(p.interesCalc)},
+    {label:`Interés (${p.interesPct}%)`,value:esAbierto?'Sobre saldo pendiente':fmt(p.interesCalc||0)},
     {label:'Frecuencia de pago',value:p.frecuencia},
-    {label:'Cantidad de cuotas',value:String(p.cuotas)},
-    {label:'Valor de cada cuota',value:fmt(p.capitalCuota+p.interesCuota)},
-    {label:'Primera cuota vence',value:formatDate(fechaCuota(p,1))},
-    {label:'TOTAL A PAGAR',value:fmt(p.totalCobrar),total:true},
+    ...(!esAbierto?[
+      {label:'Cantidad de cuotas',value:String(p.cuotas)},
+      {label:'Valor de cada cuota',value:fmt((p.capitalCuota||0)+(p.interesCuota||0))},
+      {label:'Primera cuota vence',value:formatDate(fechaCuota(p,1))},
+      {label:'TOTAL A PAGAR',value:fmt(p.totalCobrar||p.monto),total:true},
+    ]:[
+      {label:'CAPITAL DESEMBOLSADO',value:fmt(p.monto),total:true},
+    ]),
   ];
   abrirRecibo('Contrato de Préstamo',filas,'',cli?cli.telefono||'':'');
 }
@@ -3712,5 +3960,19 @@ window._paoMarcarBorrado = _marcarBorrado;
 // principal (justo después de inicializar DB y CONFIG), no aquí.
 
 </script>
+<!-- MODAL OPCIONES DESEMBOLSO -->
+<div class="modal-backdrop" id="modal-desembolso-opciones">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">✅ Préstamo registrado <button class="modal-close" onclick="cerrarModal('modal-desembolso-opciones')">×</button></div>
+    <div id="desembolso-resumen" style="background:var(--surface2);border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;line-height:1.8"></div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-primary" onclick="accionDesembolso('ver')" style="padding:13px;font-size:14px">📄 Ver recibo</button>
+      <button class="btn" onclick="accionDesembolso('pdf')" style="padding:13px;font-size:14px;background:#0f766e;color:#fff;border-color:#0f766e">🖨️ Imprimir / Guardar PDF</button>
+      <button class="btn" id="btn-desembolso-wa" onclick="accionDesembolso('whatsapp')" style="padding:13px;font-size:14px;background:#25D366;color:#fff;border-color:#25D366">📲 Enviar por WhatsApp</button>
+      <button class="btn" onclick="cerrarModal('modal-desembolso-opciones')" style="padding:12px">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
