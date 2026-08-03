@@ -147,10 +147,13 @@ tr:hover td{background:var(--surface2)}
 .alert-green{background:var(--green-bg);border:1px solid #86efac;color:var(--green-text)}
 .alert-info{background:var(--blue-bg);border:1px solid #93c5fd;color:var(--blue-text)}
 .acc-group{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
-.acc-header{width:100%;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--text);text-align:left}
+.acc-header{width:100%;display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--surface2);border:none;cursor:pointer;color:var(--text);text-align:left}
 .acc-header:hover{filter:brightness(0.97)}
-.acc-count{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-muted);margin-left:auto}
-.acc-chev{font-size:12px;color:var(--text-muted);width:12px;text-align:center}
+.acc-header-text{display:flex;flex-direction:column;gap:1px;min-width:0}
+.acc-title{font-size:13px;font-weight:600;color:var(--text)}
+.acc-subtitle{font-size:11px;font-weight:400;color:var(--text-muted)}
+.acc-count{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-muted);margin-left:auto;flex-shrink:0}
+.acc-chev{font-size:12px;color:var(--text-muted);width:12px;text-align:center;flex-shrink:0}
 .acc-body{padding:10px 12px}
 
 /* PRESTAMO CARD */
@@ -1470,10 +1473,13 @@ function renderDashboard(){
   const filaAbierto=({cli,capital,interes,mora})=>
     `<div class="alert ${mora.enMora?'alert-red':'alert-info'}" style="justify-content:space-between;margin-bottom:6px"><div><strong>${cli?cli.nombre:'?'}</strong><div style="font-size:12px;margin-top:2px">Capital pendiente: ${fmt(capital)}${mora.enMora?` — ⚠️ ${mora.dias} día${mora.dias!==1?'s':''} sin pagar interés`:''}</div></div><strong>${fmt(capital+interes)}</strong></div>`;
 
-  const grupo=(id,icono,titulo,items,filaFn,cls)=>`
+  const grupo=(id,icono,titulo,subtitulo,items,filaFn,cls)=>`
     <div class="acc-group">
       <button type="button" class="acc-header" onclick="toggleAlertGroup('${id}')">
-        <span>${icono} ${titulo}</span>
+        <span class="acc-header-text">
+          <span class="acc-title">${icono} ${titulo}</span>
+          ${subtitulo?`<span class="acc-subtitle">${subtitulo}</span>`:''}
+        </span>
         <span class="acc-count">${items.length}</span>
         <span class="acc-chev" id="chev-${id}">▸</span>
       </button>
@@ -1482,11 +1488,12 @@ function renderDashboard(){
       </div>
     </div>`;
 
+  const abiertosEnMora=abiertos.filter(a=>a.mora.enMora).length;
   document.getElementById('alertas-list').innerHTML=
-    grupo('vencidos','🔴','Vencidos',vencidos,filaCuota,'alert-red')+
-    grupo('proxvencer','🟡','Próximo a vencer (≤5 días)',proxVencer,filaCuota,'alert-yellow')+
-    grupo('aldia','🟢','Al día (>5 días)',alDia,filaCuota,'alert-info')+
-    grupo('abiertos','🔵',`Abiertos${abiertos.filter(a=>a.mora.enMora).length>0?' (⚠️ '+abiertos.filter(a=>a.mora.enMora).length+' sin pagar)':''}`,abiertos,(_,it)=>filaAbierto(it),'');
+    grupo('vencidos','🔴','Vencidos','Ya pasó la fecha de pago',vencidos,filaCuota,'alert-red')+
+    grupo('proxvencer','🟡','Próximo a vencer','Vence en 5 días o menos',proxVencer,filaCuota,'alert-yellow')+
+    grupo('aldia','🟢','Al día','Vence en más de 5 días',alDia,filaCuota,'alert-info')+
+    grupo('abiertos','🔵','Abiertos',abiertosEnMora>0?`⚠️ ${abiertosEnMora} sin pagar interés`:'Préstamos sin cuotas fijas',abiertos,(_,it)=>filaAbierto(it),'');
 
   const pct=totalPrestado>0?Math.round(capPagado/totalPrestado*100):0;
   const ti=DB.prestamos.reduce((s,p)=>s+(p.interesCalc||0),0);
