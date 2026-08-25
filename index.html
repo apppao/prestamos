@@ -83,6 +83,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .card-title{font-size:13px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:14px}
 
 /* KPI */
+.dash-vista-toggle{display:inline-flex;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:3px;margin-bottom:12px}
+.dash-vista-btn{padding:6px 14px;border:none;border-radius:6px;background:transparent;color:var(--text-muted);font-size:12px;font-weight:600;cursor:pointer}
+.dash-vista-btn.active{background:var(--navy);color:#fff}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
 .kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px}
 .kpi-label{font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
@@ -395,7 +398,12 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
 
     <!-- DASHBOARD -->
     <div class="page active" id="page-dashboard">
+      <div class="dash-vista-toggle" id="dash-vista-toggle">
+        <button type="button" class="dash-vista-btn active" id="dvbtn-activa" onclick="setDashboardVista('activa')">Cartera activa</button>
+        <button type="button" class="dash-vista-btn" id="dvbtn-historico" onclick="setDashboardVista('historico')">Histórico total</button>
+      </div>
       <div class="kpi-grid" id="kpi-grid"></div>
+      <div style="font-size:11px;color:var(--text-muted);margin:-10px 0 16px 2px">"Pendiente" y "Cobros hoy" siempre muestran el estado actual, sin importar la vista elegida.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="card"><div class="card-title">Alertas de cobro</div><div id="alertas-list"></div></div>
         <div class="card"><div class="card-title">Cartera activa</div><div id="cartera-resumen"></div></div>
@@ -569,6 +577,10 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
         <div class="export-item">
           <div><div class="export-label">Exportar a Excel (.xlsx)</div><div class="export-desc">Descarga toda la cartera con todas las hojas</div></div>
           <button class="btn btn-primary" onclick="exportarExcel()">Descargar Excel</button>
+        </div>
+        <div class="export-item">
+          <div><div class="export-label">Importar cartera existente</div><div class="export-desc">Trae tus clientes y préstamos activos desde una plantilla Excel</div></div>
+          <button class="btn btn-primary" onclick="abrirImportarCartera()">Importar cartera</button>
         </div>
         <div class="export-item">
           <div><div class="export-label">Guardar respaldo (.json)</div><div class="export-desc">Guarda todos los datos para no perderlos si se limpia el navegador</div></div>
@@ -797,6 +809,36 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
     <div class="btn-row">
       <button class="btn" onclick="cerrarModal('modal-anular-pago')">Cancelar</button>
       <button class="btn btn-danger" onclick="confirmarAnulacion()">Anular pago</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL IMPORTAR CARTERA -->
+<div class="modal-backdrop" id="modal-importar">
+  <div class="modal" style="max-width:960px">
+    <div class="modal-title">📥 Importar cartera existente <button class="modal-close" onclick="cerrarModal('modal-importar')">×</button></div>
+
+    <div id="import-paso-1">
+      <div class="calc-box" style="margin-bottom:14px">
+        <div class="calc-box-title">1 — Descarga la plantilla</div>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">Llena una fila por cada préstamo (si un cliente tiene 2 préstamos, usa 2 filas con el mismo nombre/cédula).</div>
+        <button class="btn btn-primary" onclick="descargarPlantillaImport()">⬇️ Descargar plantilla Excel</button>
+      </div>
+      <div class="calc-box">
+        <div class="calc-box-title">2 — Sube tu plantilla ya llena</div>
+        <input type="file" id="import-cartera-file" accept=".xlsx,.xls" style="display:none" onchange="procesarArchivoImport(event)">
+        <button class="btn btn-primary" onclick="document.getElementById('import-cartera-file').click()">📂 Elegir archivo</button>
+        <span id="import-nombre-archivo" style="font-size:12px;color:var(--text-muted);margin-left:8px"></span>
+      </div>
+    </div>
+
+    <div id="import-paso-2" style="display:none">
+      <div id="import-resumen-validacion" style="margin-bottom:12px"></div>
+      <div id="import-lista-preview" style="max-height:400px;overflow-y:auto"></div>
+      <div class="btn-row" style="margin-top:14px">
+        <button class="btn" onclick="cancelarImportacion()">Cancelar</button>
+        <button class="btn btn-primary" id="btn-confirmar-import" onclick="confirmarImportacion()">Confirmar importación</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1428,9 +1470,22 @@ function saldoPendientePrestamo(p){
   return Math.max(0,(p.totalCobrar||0)-pagadoAct);
 }
 
+// 'activa' = solo préstamos Activo/Moroso · 'historico' = todos, incluidos Finalizados
+let dashboardVista='activa';
+function setDashboardVista(v){
+  dashboardVista=v;
+  renderDashboard();
+}
+window.setDashboardVista=setDashboardVista;
+
 function renderDashboard(){
-  const totalPrestado=DB.prestamos.reduce((s,p)=>s+p.monto,0);
-  const pagosActDash=DB.pagos.filter(p=>p.estado!=='Anulado');
+  const esActiva=dashboardVista!=='historico';
+  document.getElementById('dvbtn-activa').classList.toggle('active',esActiva);
+  document.getElementById('dvbtn-historico').classList.toggle('active',!esActiva);
+  const idsActivos=new Set(DB.prestamos.filter(p=>p.estado==='Activo'||p.estado==='Moroso').map(p=>p.id));
+  const prestamosBase=esActiva?DB.prestamos.filter(p=>idsActivos.has(p.id)):DB.prestamos;
+  const totalPrestado=prestamosBase.reduce((s,p)=>s+p.monto,0);
+  const pagosActDash=DB.pagos.filter(p=>p.estado!=='Anulado' && (!esActiva || idsActivos.has(p.prestamoId)));
   const totalCobrado=pagosActDash.reduce((s,p)=>s+p.monto,0);
   const capPagado=pagosActDash.reduce((s,p)=>s+p.capitalAplicado+p.excedente,0);
   const intPagado=pagosActDash.reduce((s,p)=>s+p.interesAplicado,0);
@@ -1496,7 +1551,7 @@ function renderDashboard(){
     grupo('abiertos','🔵','Abiertos',abiertosEnMora>0?`⚠️ ${abiertosEnMora} sin pagar interés`:'Préstamos sin cuotas fijas',abiertos,(_,it)=>filaAbierto(it),'');
 
   const pct=totalPrestado>0?Math.round(capPagado/totalPrestado*100):0;
-  const ti=DB.prestamos.reduce((s,p)=>s+(p.interesCalc||0),0);
+  const ti=prestamosBase.reduce((s,p)=>s+(p.interesCalc||0),0);
   const pctI=ti>0?Math.round(intPagado/ti*100):0;
   document.getElementById('cartera-resumen').innerHTML=`
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -3306,6 +3361,280 @@ function generarReciboPagoObj(pg){
     {label:'MONTO RECIBIDO',value:fmt(pg.monto),total:true},
   ].filter(Boolean);
   abrirRecibo('Recibo de Pago',filas,pg.observaciones?`Nota: ${pg.observaciones}`:'',cli?cli.telefono||'':'');
+}
+
+// ═══════════════════ IMPORTAR CARTERA ═══════════════════
+const IMPORT_FRECS=['Diaria','Semanal','Quincenal','Mensual'];
+function normTxt(s){return (s||'').toString().trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
+
+function descargarPlantillaImport(){
+  const headers=['Nombre completo','Cedula','Telefono','Direccion','Referencia','Tipo de prestamo','Monto original','Interes %','Frecuencia','Cantidad de cuotas','Fecha de desembolso (AAAA-MM-DD)','Saldo pendiente actual'];
+  const ejemplo=['Juan Pérez Reyes','001-1234567-8','809-555-1234','Calle Duarte #45, Los Alcarrizos','Ana Pérez - 809-555-9876','Cuotas',50000,20,'Quincenal',12,'2026-06-01',22000];
+  const ejemplo2=['María Rodríguez','','829-555-2345','','','Abierto',30000,10,'Mensual','','2026-05-15',22000];
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet([headers,ejemplo,ejemplo2]);
+  ws['!cols']=headers.map(()=>({wch:22}));
+  XLSX.utils.book_append_sheet(wb,ws,'Cartera');
+  const instrucciones=[
+    ['INSTRUCCIONES'],
+    ['1. No cambies los nombres de las columnas.'],
+    ['2. Una fila por cada préstamo. Si un cliente tiene varios préstamos, repite su nombre/cédula en varias filas.'],
+    ['3. Tipo de préstamo: escribe exactamente "Cuotas" o "Abierto".'],
+    ['4. Cantidad de cuotas: solo llénala si el tipo es "Cuotas". Déjala vacía si es "Abierto".'],
+    ['5. Saldo pendiente actual: lo que el cliente TODAVÍA debe hoy, no el monto original.'],
+    ['   Si el préstamo ya está pagado completo, pon el saldo en 0.'],
+    ['6. Fecha de desembolso en formato AAAA-MM-DD (ejemplo: 2026-06-01).'],
+    ['7. Borra las 2 filas de ejemplo antes de subir tu archivo, o déjalas — el sistema las reconoce y las puedes quitar en la previsualización.'],
+  ];
+  const ws2=XLSX.utils.aoa_to_sheet(instrucciones);
+  ws2['!cols']=[{wch:90}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Instrucciones');
+  XLSX.writeFile(wb,'Plantilla_Importar_Cartera_PAO.xlsx');
+}
+
+function abrirImportarCartera(){
+  if(!esAdmin()){toast('Solo un administrador puede importar cartera','err');return}
+  window._importRows=[];
+  document.getElementById('import-paso-1').style.display='block';
+  document.getElementById('import-paso-2').style.display='none';
+  document.getElementById('import-nombre-archivo').textContent='';
+  document.getElementById('import-cartera-file').value='';
+  document.getElementById('modal-importar').classList.add('open');
+}
+function cancelarImportacion(){
+  window._importRows=[];
+  cerrarModal('modal-importar');
+}
+
+function parseFechaImport(val){
+  if(val instanceof Date && !isNaN(val)) return val.toISOString().slice(0,10);
+  const s=(val||'').toString().trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  return null;
+}
+
+function validarFilaImport(r){
+  r.errores=[];r.advertencias=[];
+  const c=r.cliente,p=r.prestamo;
+  if(!c.nombre||!c.nombre.trim()) r.errores.push('Falta el nombre del cliente');
+  if(!['Cuotas','Abierto'].includes(p.tipo)) r.errores.push('Tipo debe ser "Cuotas" o "Abierto"');
+  if(!(p.monto>0)) r.errores.push('Monto original inválido');
+  if(!(p.interesPct>=0)) r.errores.push('Interés % inválido');
+  if(!IMPORT_FRECS.includes(p.frecuencia)) r.errores.push('Frecuencia inválida (Diaria/Semanal/Quincenal/Mensual)');
+  if(!p.fechaDesembolso) r.errores.push('Fecha de desembolso inválida');
+  else if(p.fechaDesembolso>today()) r.errores.push('La fecha de desembolso no puede ser futura');
+  if(!(p.saldoPendiente>=0)) r.errores.push('Saldo pendiente inválido');
+  if(p.tipo==='Cuotas'){
+    if(!(p.cuotas>0)) r.errores.push('Cantidad de cuotas inválida');
+    if(p.monto>0 && p.saldoPendiente>p.monto+0.5) r.errores.push('El saldo pendiente no puede ser mayor al monto original');
+  }
+  // Detección de cliente ya existente por cédula
+  r.clienteExistenteId=null;
+  if(c.cedula){
+    const norm=c.cedula.replace(/-/g,'');
+    const existente=DB.clientes.find(x=>x.cedula&&x.cedula.replace(/-/g,'')===norm);
+    if(existente){
+      r.clienteExistenteId=existente.id;
+      r.advertencias.push(`Cliente ya existe en PAO ("${existente.nombre}") — se usará ese registro`);
+      const posibleDup=DB.prestamos.find(x=>x.clienteId===existente.id && Math.abs(x.monto-p.monto)<1 && Math.abs(diasDesde(x.fechaDesembolso)-diasDesde(p.fechaDesembolso||today()))<=3);
+      if(posibleDup) r.advertencias.push('Posible préstamo repetido: ya existe uno muy parecido para este cliente');
+    }
+  }
+  r.estado=r.errores.length>0?'error':(r.advertencias.length>0?'advertencia':'ok');
+}
+
+function procesarArchivoImport(e){
+  const file=e.target.files[0];if(!file)return;
+  document.getElementById('import-nombre-archivo').textContent=file.name;
+  const reader=new FileReader();
+  reader.onload=(ev)=>{
+    try{
+      const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array',cellDates:true});
+      const sheetName=wb.SheetNames.find(n=>normTxt(n)!=='instrucciones')||wb.SheetNames[0];
+      const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{defval:''});
+      if(rows.length===0){toast('El archivo no tiene filas con datos','err');return}
+      const keyMap={
+        'nombre completo':'nombre','nombre':'nombre','cedula':'cedula','telefono':'telefono',
+        'direccion':'direccion','referencia':'referencia',
+        'tipo de prestamo':'tipo','tipo':'tipo','monto original':'monto','monto':'monto',
+        'interes %':'interesPct','interes':'interesPct','frecuencia':'frecuencia',
+        'cantidad de cuotas':'cuotas','cuotas':'cuotas',
+        'saldo pendiente actual':'saldoPendiente','saldo pendiente':'saldoPendiente'
+      };
+      window._importRows=rows.map((row,i)=>{
+        const flat={};
+        Object.keys(row).forEach(h=>{
+          const hn=normTxt(h);
+          if(hn.startsWith('fecha de desembolso')) flat.fechaDesembolso=parseFechaImport(row[h]);
+          else if(keyMap[hn]) flat[keyMap[hn]]=row[h];
+        });
+        const tipoTxt=(flat.tipo||'').toString().trim().toLowerCase();
+        const tipo=tipoTxt.includes('abiert')?'Abierto':(tipoTxt.includes('cuota')?'Cuotas':'');
+        const frecTxt=normTxt(flat.frecuencia);
+        const frecuencia=IMPORT_FRECS.find(f=>normTxt(f)===frecTxt)||'';
+        const r={
+          fila:i+2,
+          cliente:{
+            nombre:(flat.nombre||'').toString().trim(),
+            cedula:(flat.cedula||'').toString().trim(),
+            telefono:(flat.telefono||'').toString().trim(),
+            direccion:(flat.direccion||'').toString().trim(),
+            referencia:(flat.referencia||'').toString().trim()
+          },
+          prestamo:{
+            tipo,
+            monto:parseFloat(flat.monto)||0,
+            interesPct:parseFloat(flat.interesPct)||0,
+            frecuencia,
+            cuotas:parseInt(flat.cuotas)||0,
+            fechaDesembolso:flat.fechaDesembolso,
+            saldoPendiente:flat.saldoPendiente===''?NaN:parseFloat(flat.saldoPendiente)
+          }
+        };
+        validarFilaImport(r);
+        return r;
+      });
+      document.getElementById('import-paso-1').style.display='none';
+      document.getElementById('import-paso-2').style.display='block';
+      renderImportPreview();
+    }catch(err){
+      console.error(err);
+      toast('No se pudo leer el archivo. Verifica que sea la plantilla correcta.','err');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderResumenImport(){
+  const rows=window._importRows||[];
+  const ok=rows.filter(r=>r.estado==='ok').length;
+  const adv=rows.filter(r=>r.estado==='advertencia').length;
+  const err=rows.filter(r=>r.estado==='error').length;
+  document.getElementById('import-resumen-validacion').innerHTML=`
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <span class="badge badge-green">${ok} listos</span>
+      <span class="badge badge-yellow">${adv} con advertencia</span>
+      <span class="badge badge-red">${err} con error</span>
+      <span class="badge badge-gray">${rows.length} filas totales</span>
+    </div>`;
+  const btn=document.getElementById('btn-confirmar-import');
+  btn.textContent=`Confirmar importación (${ok+adv} préstamos)`;
+  btn.disabled=(ok+adv)===0;
+}
+
+function filaImportHTML(r,idx){
+  const cls=r.estado==='error'?'alert-red':(r.estado==='advertencia'?'alert-yellow':'alert-info');
+  const icon=r.estado==='error'?'🔴':(r.estado==='advertencia'?'🟡':'🟢');
+  const msgs=[...r.errores.map(m=>'❌ '+m),...r.advertencias.map(m=>'⚠️ '+m)].join('<br>');
+  return `<div class="alert ${cls}" style="flex-direction:column;align-items:stretch;gap:8px;margin-bottom:10px" id="import-row-${idx}">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong>${icon} Fila ${r.fila}</strong>
+      <button class="btn btn-sm btn-danger" onclick="quitarFilaImport(${idx})">Quitar</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+      <div class="form-group"><label>Nombre</label><input type="text" value="${(r.cliente.nombre||'').replace(/"/g,'&quot;')}" onchange="actualizarCampoImport(${idx},'cliente','nombre',this.value)"></div>
+      <div class="form-group"><label>Cédula</label><input type="text" value="${(r.cliente.cedula||'').replace(/"/g,'&quot;')}" onchange="actualizarCampoImport(${idx},'cliente','cedula',this.value)"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select onchange="actualizarCampoImport(${idx},'prestamo','tipo',this.value)">
+          <option value="" ${!r.prestamo.tipo?'selected':''}>—</option>
+          <option value="Cuotas" ${r.prestamo.tipo==='Cuotas'?'selected':''}>Cuotas</option>
+          <option value="Abierto" ${r.prestamo.tipo==='Abierto'?'selected':''}>Abierto</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Monto</label><input type="number" value="${r.prestamo.monto||''}" onchange="actualizarCampoImport(${idx},'prestamo','monto',parseFloat(this.value)||0)"></div>
+      <div class="form-group"><label>Interés %</label><input type="number" value="${r.prestamo.interesPct||''}" onchange="actualizarCampoImport(${idx},'prestamo','interesPct',parseFloat(this.value)||0)"></div>
+      <div class="form-group"><label>Frecuencia</label>
+        <select onchange="actualizarCampoImport(${idx},'prestamo','frecuencia',this.value)">
+          <option value="" ${!r.prestamo.frecuencia?'selected':''}>—</option>
+          ${IMPORT_FRECS.map(f=>`<option value="${f}" ${r.prestamo.frecuencia===f?'selected':''}>${f}</option>`).join('')}
+        </select>
+      </div>
+      ${r.prestamo.tipo!=='Abierto'?`<div class="form-group"><label>Cuotas</label><input type="number" value="${r.prestamo.cuotas||''}" onchange="actualizarCampoImport(${idx},'prestamo','cuotas',parseInt(this.value)||0)"></div>`:''}
+      <div class="form-group"><label>Fecha desembolso</label><input type="date" value="${r.prestamo.fechaDesembolso||''}" onchange="actualizarCampoImport(${idx},'prestamo','fechaDesembolso',this.value)"></div>
+      <div class="form-group"><label>Saldo pendiente</label><input type="number" value="${isNaN(r.prestamo.saldoPendiente)?'':r.prestamo.saldoPendiente}" onchange="actualizarCampoImport(${idx},'prestamo','saldoPendiente',parseFloat(this.value)||0)"></div>
+    </div>
+    ${msgs?`<div style="font-size:12px">${msgs}</div>`:''}
+  </div>`;
+}
+
+function renderImportPreview(){
+  const rows=window._importRows||[];
+  document.getElementById('import-lista-preview').innerHTML=rows.map((r,i)=>filaImportHTML(r,i)).join('');
+  renderResumenImport();
+}
+function actualizarCampoImport(idx,grupo,campo,valor){
+  const r=window._importRows[idx];if(!r)return;
+  r[grupo][campo]=valor;
+  validarFilaImport(r);
+  document.getElementById('import-row-'+idx).outerHTML=filaImportHTML(r,idx);
+  renderResumenImport();
+}
+function quitarFilaImport(idx){
+  window._importRows.splice(idx,1);
+  renderImportPreview();
+}
+
+function confirmarImportacion(){
+  const filas=(window._importRows||[]).filter(r=>r.estado!=='error');
+  if(filas.length===0){toast('No hay filas listas para importar','err');return}
+  const btn=document.getElementById('btn-confirmar-import');
+  btn.disabled=true;btn.textContent='Importando...';
+
+  let clientesCreados=0,clientesReusados=0,prestamosCreados=0;
+  filas.forEach(r=>{
+    let cli=null;
+    if(r.clienteExistenteId) cli=DB.clientes.find(c=>c.id===r.clienteExistenteId);
+    if(!cli && r.cliente.cedula){
+      const norm=r.cliente.cedula.replace(/-/g,'');
+      cli=DB.clientes.find(c=>c.cedula&&c.cedula.replace(/-/g,'')===norm);
+    }
+    if(!cli){
+      cli={id:uid(),nombre:sanitizeText(r.cliente.nombre),cedula:r.cliente.cedula||'',
+        telefono:r.cliente.telefono||'',referencia:sanitizeText(r.cliente.referencia||''),
+        direccion:sanitizeText(r.cliente.direccion||''),fechaReg:today()};
+      DB.clientes.push(cli);clientesCreados++;
+    } else clientesReusados++;
+
+    const p=r.prestamo,fechaMig=today();
+    let prestamoObj;
+    if(p.tipo==='Abierto'){
+      const saldo=isNaN(p.saldoPendiente)?p.monto:p.saldoPendiente;
+      prestamoObj={id:uid(),tipo:'Abierto',clienteId:cli.id,monto:p.monto,interesPct:p.interesPct,
+        capitalPendiente:saldo,frecuencia:p.frecuencia,fechaDesembolso:p.fechaDesembolso,
+        estado:saldo<0.01?'Finalizado':'Activo',creadoPor:CURRENT_USER?CURRENT_USER.username:'',origen:'migrado'};
+      DB.prestamos.push(prestamoObj);
+    } else {
+      const intCalc=p.monto*(p.interesPct/100),total=p.monto+intCalc;
+      const saldo=isNaN(p.saldoPendiente)?total:p.saldoPendiente;
+      prestamoObj={id:uid(),tipo:'Cuotas',clienteId:cli.id,monto:p.monto,interesPct:p.interesPct,
+        interesCalc:intCalc,totalCobrar:total,frecuencia:p.frecuencia,cuotas:p.cuotas,
+        capitalCuota:p.monto/p.cuotas,interesCuota:intCalc/p.cuotas,fechaDesembolso:p.fechaDesembolso,
+        estado:saldo<0.01?'Finalizado':'Activo',creadoPor:CURRENT_USER?CURRENT_USER.username:'',origen:'migrado'};
+      DB.prestamos.push(prestamoObj);
+      const yaAbonado=total-saldo;
+      if(yaAbonado>0.5){
+        const capApl=Math.min(yaAbonado,p.monto);
+        const intApl=Math.max(yaAbonado-capApl,0);
+        DB.pagos.push({id:uid(),prestamoId:prestamoObj.id,clienteId:cli.id,fecha:fechaMig,
+          fechaISO:new Date().toISOString(),monto:yaAbonado,interesAplicado:intApl,capitalAplicado:capApl,
+          excedente:0,recargo:0,cuotaNumero:null,estado:'Activo',
+          observaciones:'Saldo migrado desde cartera anterior',
+          usuario:CURRENT_USER?CURRENT_USER.username:'',esMigracion:true});
+      }
+    }
+    prestamosCreados++;
+  });
+
+  actualizarMoraAutomatica();
+  save('full', null);
+  audit('Importar cartera',`${clientesCreados} clientes nuevos, ${clientesReusados} reutilizados, ${prestamosCreados} préstamos migrados`,'');
+  renderTablaClientes();renderTablaPrestamos();actualizarSelectsClientes();
+  if(document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
+  window._importRows=[];
+  cerrarModal('modal-importar');
+  toast(`Importación completa: ${prestamosCreados} préstamos (${clientesCreados} clientes nuevos, ${clientesReusados} existentes)`);
 }
 
 // ═══════════════════ EXPORTAR ═══════════════════
