@@ -158,6 +158,11 @@ tr:hover td{background:var(--surface2)}
 .acc-count{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:1px 8px;font-size:11px;font-weight:700;color:var(--text-muted);margin-left:auto;flex-shrink:0}
 .acc-chev{font-size:12px;color:var(--text-muted);width:12px;text-align:center;flex-shrink:0}
 .acc-body{padding:10px 12px}
+.buscador-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:50;box-shadow:0 6px 16px rgba(0,0,0,.12);margin-top:2px}
+.buscador-item{padding:9px 12px;font-size:13px;cursor:pointer;border-bottom:1px solid var(--border)}
+.buscador-item:last-child{border-bottom:none}
+.buscador-item:hover{background:var(--surface2)}
+.buscador-empty{padding:10px 12px;font-size:12px;color:var(--text-muted)}
 
 /* PRESTAMO CARD */
 .prestamo-card{border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:all .15s;background:var(--surface)}
@@ -466,7 +471,12 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
           <div class="card-title">Registrar préstamo</div>
           <div class="form-grid">
             <div class="form-group"><label>Tipo de préstamo</label><select id="pre-tipo" onchange="preToggleTipo()"><option value="Cuotas">Por cuotas (fijo)</option><option value="Abierto">Préstamo abierto (interés sobre saldo)</option></select></div>
-            <div class="form-group"><label>Cliente *</label><select id="pre-cliente" onchange="preCalc()"><option value="">Seleccionar cliente</option></select></div>
+            <div class="form-group" style="position:relative">
+              <label>Cliente *</label>
+              <input type="text" id="pre-cliente-buscar" placeholder="Escribe el nombre o cédula..." autocomplete="off" oninput="filtrarBuscadorCliente('pre')" onfocus="filtrarBuscadorCliente('pre')" onblur="setTimeout(()=>ocultarBuscadorCliente('pre'),150)">
+              <select id="pre-cliente" style="display:none" onchange="preCalc()"><option value="">Seleccionar cliente</option></select>
+              <div id="pre-cliente-lista" class="buscador-dropdown" style="display:none"></div>
+            </div>
             <div class="form-group"><label>Monto prestado (RD$) *</label><input id="pre-monto" type="number" min="0" placeholder="10000" oninput="preCalc()"></div>
             <div class="form-group"><label>Interés (%)</label><input id="pre-interes" type="number" min="0" max="100" placeholder="30" oninput="preCalc()"></div>
             <div class="form-group"><label>Frecuencia de pago</label><select id="pre-freq" onchange="preCalc()"><option value="Diaria">Diaria (cada 1 día)</option><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option><option value="Mensual">Mensual (cada 30 días)</option></select></div>
@@ -522,7 +532,12 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
         <div>
           <div class="card">
             <div class="card-title">1 — Seleccionar cliente</div>
-            <div class="form-group"><label>Cliente</label><select id="pag-cliente" onchange="cargarPrestamosCliente()"><option value="">Seleccionar cliente</option></select></div>
+            <div class="form-group" style="position:relative">
+              <label>Cliente</label>
+              <input type="text" id="pag-cliente-buscar" placeholder="Escribe el nombre o cédula..." autocomplete="off" oninput="filtrarBuscadorCliente('pag')" onfocus="filtrarBuscadorCliente('pag')" onblur="setTimeout(()=>ocultarBuscadorCliente('pag'),150)">
+              <select id="pag-cliente" style="display:none" onchange="cargarPrestamosCliente()"><option value="">Seleccionar cliente</option></select>
+              <div id="pag-cliente-lista" class="buscador-dropdown" style="display:none"></div>
+            </div>
           </div>
           <div class="card" id="pag-prestamos-card" style="display:none">
             <div class="card-title">2 — Seleccionar préstamo</div>
@@ -1591,12 +1606,17 @@ function guardarCliente(){
     const dup=DB.clientes.find(c=>c.cedula&&c.cedula.replace(/-/g,'')=== cedula.replace(/-/g,''));
     if(dup){toast('Esa cédula ya está registrada: '+dup.nombre,'err');return}
   }
-  DB.clientes.push({id:uid(),nombre,cedula,telefono:document.getElementById('cli-tel').value.trim(),referencia:sanitizeText(document.getElementById('cli-ref').value.trim()),direccion:sanitizeText(document.getElementById('cli-dir').value.trim()),fechaReg:today()});
-  save('clientes', DB.clientes[DB.clientes.length-1].id);
+  const nuevoCliente={id:uid(),nombre,cedula,telefono:document.getElementById('cli-tel').value.trim(),referencia:sanitizeText(document.getElementById('cli-ref').value.trim()),direccion:sanitizeText(document.getElementById('cli-dir').value.trim()),fechaReg:today()};
+  DB.clientes.push(nuevoCliente);
+  save('clientes', nuevoCliente.id);
   ['cli-nombre','cli-cedula','cli-tel','cli-ref','cli-dir'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('cli-cedula-msg').style.display='none';
-  toast('Cliente guardado correctamente');
   actualizarSelectsClientes();
+  if(confirm(`Cliente "${nombre}" guardado.\n\n¿Deseas registrarle un préstamo ahora?`)){
+    irACrearPrestamo(nuevoCliente.id);
+  } else {
+    toast('Cliente guardado correctamente');
+  }
 }
 
 function renderClientes(){actualizarSelectsClientes()}
@@ -1640,7 +1660,8 @@ function renderTablaClientes(){
       <td>${pres.length>0?`<a href="#" onclick="event.preventDefault();abrirDetalleCliente('${c.id}')" style="color:var(--navy-light);font-weight:600;text-decoration:underline">${pres.length} préstamo${pres.length!==1?'s':''}</a>`:'—'}</td>
       <td><span class="badge ${badge}">${label}</span></td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm" onclick="abrirEditCliente('${c.id}')">Editar</button>
+        <button class="btn btn-sm btn-primary" onclick="irACrearPrestamo('${c.id}')" title="Registrar un préstamo nuevo para este cliente">+ Préstamo</button>
+        <button class="btn btn-sm" onclick="abrirEditCliente('${c.id}')" style="margin-left:4px">Editar</button>
         <button class="btn btn-sm btn-danger admin-only" onclick="borrarCliente('${c.id}')" style="margin-left:4px">Borrar</button>
       </td>
     </tr>`;
@@ -1702,6 +1723,54 @@ function borrarCliente(id){
 function actualizarSelectsClientes(){
   const opts='<option value="">Seleccionar cliente</option>'+DB.clientes.map(c=>`<option value="${c.id}">${c.nombre}${c.cedula?' ('+c.cedula+')':''}</option>`).join('');
   ['pre-cliente','pag-cliente'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts});
+}
+
+// ── Buscador de cliente (input con lista desplegable) ──────────────
+// El <select> subyacente sigue existiendo oculto, así todo el código
+// que ya lee su .value (preCalc, cargarPrestamosCliente, etc.) sigue funcionando igual.
+function filtrarBuscadorCliente(prefix){
+  const qEl=document.getElementById(prefix+'-cliente-buscar');
+  const lista=document.getElementById(prefix+'-cliente-lista');
+  if(!qEl||!lista)return;
+  const q=qEl.value.trim().toLowerCase();
+  let matches=DB.clientes;
+  if(q) matches=matches.filter(c=>c.nombre.toLowerCase().includes(q)||(c.cedula&&c.cedula.replace(/-/g,'').includes(q.replace(/-/g,''))));
+  matches=matches.slice(0,30);
+  if(DB.clientes.length===0){
+    lista.innerHTML='<div class="buscador-empty">No hay clientes registrados todavía</div>';
+  } else if(matches.length===0){
+    lista.innerHTML='<div class="buscador-empty">Sin resultados</div>';
+  } else {
+    lista.innerHTML=matches.map(c=>`<div class="buscador-item" onmousedown="seleccionarClienteBuscador('${prefix}','${c.id}')">${c.nombre}${c.cedula?' — '+c.cedula:''}</div>`).join('');
+  }
+  lista.style.display='block';
+}
+function seleccionarClienteBuscador(prefix,cid){
+  const c=DB.clientes.find(x=>x.id===cid);if(!c)return;
+  document.getElementById(prefix+'-cliente-buscar').value=c.nombre+(c.cedula?' ('+c.cedula+')':'');
+  const sel=document.getElementById(prefix+'-cliente');
+  sel.value=cid;
+  document.getElementById(prefix+'-cliente-lista').style.display='none';
+  sel.dispatchEvent(new Event('change'));
+}
+function ocultarBuscadorCliente(prefix){
+  const lista=document.getElementById(prefix+'-cliente-lista');
+  if(lista) lista.style.display='none';
+}
+// Precarga un cliente ya elegido (usado al ir desde la lista de Clientes a "Nuevo préstamo")
+function precargarClienteEnBuscador(prefix,cid){
+  const c=DB.clientes.find(x=>x.id===cid);if(!c)return;
+  const buscarEl=document.getElementById(prefix+'-cliente-buscar');
+  const sel=document.getElementById(prefix+'-cliente');
+  if(buscarEl) buscarEl.value=c.nombre+(c.cedula?' ('+c.cedula+')':'');
+  if(sel){ sel.value=cid; sel.dispatchEvent(new Event('change')); }
+}
+
+// Lleva a "Nuevo préstamo" con el cliente ya elegido (desde la lista de Clientes)
+function irACrearPrestamo(cid){
+  goTo('prestamos');
+  showTab('pre','nuevo');
+  setTimeout(()=>precargarClienteEnBuscador('pre',cid),50);
 }
 
 // ═══════════════════ PRÉSTAMOS ═══════════════════
@@ -3368,9 +3437,9 @@ const IMPORT_FRECS=['Diaria','Semanal','Quincenal','Mensual'];
 function normTxt(s){return (s||'').toString().trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
 
 function descargarPlantillaImport(){
-  const headers=['Nombre completo','Cedula','Telefono','Direccion','Referencia','Tipo de prestamo','Monto original','Interes %','Frecuencia','Cantidad de cuotas','Fecha de desembolso (AAAA-MM-DD)','Saldo pendiente actual'];
-  const ejemplo=['Juan Pérez Reyes','001-1234567-8','809-555-1234','Calle Duarte #45, Los Alcarrizos','Ana Pérez - 809-555-9876','Cuotas',50000,20,'Quincenal',12,'2026-06-01',22000];
-  const ejemplo2=['María Rodríguez','','829-555-2345','','','Abierto',30000,10,'Mensual','','2026-05-15',22000];
+  const headers=['Nombre completo','Cedula','Telefono','Direccion','Referencia','Tipo de prestamo','Monto original','Interes %','Frecuencia','Cantidad de cuotas','Fecha de desembolso (AAAA-MM-DD)','Cuotas pagadas','Fecha del ultimo pago (AAAA-MM-DD)','Saldo pendiente actual'];
+  const ejemplo=['Juan Pérez Reyes','001-1234567-8','809-555-1234','Calle Duarte #45, Los Alcarrizos','Ana Pérez - 809-555-9876','Cuotas',50000,20,'Quincenal',12,'2026-06-01',5,'2026-08-15',22000];
+  const ejemplo2=['María Rodríguez','','829-555-2345','','','Abierto',30000,10,'Mensual','','2026-05-15','','',22000];
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet([headers,ejemplo,ejemplo2]);
   ws['!cols']=headers.map(()=>({wch:22}));
@@ -3381,10 +3450,13 @@ function descargarPlantillaImport(){
     ['2. Una fila por cada préstamo. Si un cliente tiene varios préstamos, repite su nombre/cédula en varias filas.'],
     ['3. Tipo de préstamo: escribe exactamente "Cuotas" o "Abierto".'],
     ['4. Cantidad de cuotas: solo llénala si el tipo es "Cuotas". Déjala vacía si es "Abierto".'],
-    ['5. Saldo pendiente actual: lo que el cliente TODAVÍA debe hoy, no el monto original.'],
+    ['5. Cuotas pagadas (solo Cuotas): cuántas cuotas completas ya pagó el cliente antes de usar PAO. Ej: si lleva 5 de 12, pon 5.'],
+    ['   Este dato es el más importante: con él, PAO calcula el saldo exacto sin adivinar. Si no lo sabes con certeza, déjalo vacío y usa el "Saldo pendiente actual" como respaldo (menos preciso).'],
+    ['6. Fecha del último pago (solo Cuotas, opcional pero recomendada): la fecha real del último abono antes de migrar. Si la dejas vacía, se usa la fecha de hoy.'],
+    ['7. Saldo pendiente actual: lo que el cliente TODAVÍA debe hoy, no el monto original. Si ya llenaste "Cuotas pagadas", este campo solo se usa para verificar que todo cuadre.'],
     ['   Si el préstamo ya está pagado completo, pon el saldo en 0.'],
-    ['6. Fecha de desembolso en formato AAAA-MM-DD (ejemplo: 2026-06-01).'],
-    ['7. Borra las 2 filas de ejemplo antes de subir tu archivo, o déjalas — el sistema las reconoce y las puedes quitar en la previsualización.'],
+    ['8. Fecha de desembolso en formato AAAA-MM-DD (ejemplo: 2026-06-01).'],
+    ['9. Borra las 2 filas de ejemplo antes de subir tu archivo, o déjalas — el sistema las reconoce y las puedes quitar en la previsualización.'],
   ];
   const ws2=XLSX.utils.aoa_to_sheet(instrucciones);
   ws2['!cols']=[{wch:90}];
@@ -3429,6 +3501,23 @@ function validarFilaImport(r){
   if(p.tipo==='Cuotas'){
     if(!(p.cuotas>0)) r.errores.push('Cantidad de cuotas inválida');
     if(p.monto>0 && p.saldoPendiente>p.monto+0.5) r.errores.push('El saldo pendiente no puede ser mayor al monto original');
+    if(p.cuotasPagadas!==''&&p.cuotasPagadas!=null){
+      if(!(p.cuotasPagadas>=0)) r.errores.push('Cuotas pagadas inválido');
+      else if(p.cuotas>0 && p.cuotasPagadas>p.cuotas) r.errores.push('Cuotas pagadas no puede ser mayor a la cantidad de cuotas');
+      else if(p.cuotas>0 && p.monto>0){
+        const intCalc=p.monto*(p.interesPct/100),total=p.monto+intCalc;
+        const saldoSegunCuotas=Math.max(0,total-(p.cuotasPagadas*(total/p.cuotas)));
+        if(!isNaN(p.saldoPendiente) && Math.abs(saldoSegunCuotas-p.saldoPendiente)>total*0.05+1){
+          r.advertencias.push(`Las cuotas pagadas (${p.cuotasPagadas}) sugieren un saldo de ${fmt(saldoSegunCuotas)}, pero el saldo declarado es ${fmt(p.saldoPendiente)} — se usarán las cuotas pagadas como fuente principal`);
+        }
+      }
+    } else if(!isNaN(p.saldoPendiente)) {
+      r.advertencias.push('No se indicaron "cuotas pagadas" — el saldo se repartirá de forma proporcional (estimado, puede desalinear la próxima cuota)');
+    }
+    if(p.fechaUltimoPago){
+      if(p.fechaUltimoPago>today()) r.errores.push('La fecha del último pago no puede ser futura');
+      else if(p.fechaDesembolso && p.fechaUltimoPago<p.fechaDesembolso) r.errores.push('La fecha del último pago no puede ser anterior al desembolso');
+    }
   }
   // Detección de cliente ya existente por cédula
   r.clienteExistenteId=null;
@@ -3461,6 +3550,7 @@ function procesarArchivoImport(e){
         'tipo de prestamo':'tipo','tipo':'tipo','monto original':'monto','monto':'monto',
         'interes %':'interesPct','interes':'interesPct','frecuencia':'frecuencia',
         'cantidad de cuotas':'cuotas','cuotas':'cuotas',
+        'cuotas pagadas':'cuotasPagadas',
         'saldo pendiente actual':'saldoPendiente','saldo pendiente':'saldoPendiente'
       };
       window._importRows=rows.map((row,i)=>{
@@ -3468,6 +3558,7 @@ function procesarArchivoImport(e){
         Object.keys(row).forEach(h=>{
           const hn=normTxt(h);
           if(hn.startsWith('fecha de desembolso')) flat.fechaDesembolso=parseFechaImport(row[h]);
+          else if(hn.startsWith('fecha del ultimo pago')) flat.fechaUltimoPago=parseFechaImport(row[h]);
           else if(keyMap[hn]) flat[keyMap[hn]]=row[h];
         });
         const tipoTxt=(flat.tipo||'').toString().trim().toLowerCase();
@@ -3490,6 +3581,8 @@ function procesarArchivoImport(e){
             frecuencia,
             cuotas:parseInt(flat.cuotas)||0,
             fechaDesembolso:flat.fechaDesembolso,
+            cuotasPagadas:flat.cuotasPagadas===''||flat.cuotasPagadas==null?'':parseInt(flat.cuotasPagadas),
+            fechaUltimoPago:flat.fechaUltimoPago||'',
             saldoPendiente:flat.saldoPendiente===''?NaN:parseFloat(flat.saldoPendiente)
           }
         };
@@ -3553,6 +3646,8 @@ function filaImportHTML(r,idx){
       </div>
       ${r.prestamo.tipo!=='Abierto'?`<div class="form-group"><label>Cuotas</label><input type="number" value="${r.prestamo.cuotas||''}" onchange="actualizarCampoImport(${idx},'prestamo','cuotas',parseInt(this.value)||0)"></div>`:''}
       <div class="form-group"><label>Fecha desembolso</label><input type="date" value="${r.prestamo.fechaDesembolso||''}" onchange="actualizarCampoImport(${idx},'prestamo','fechaDesembolso',this.value)"></div>
+      ${r.prestamo.tipo!=='Abierto'?`<div class="form-group"><label>Cuotas pagadas</label><input type="number" value="${r.prestamo.cuotasPagadas===''?'':r.prestamo.cuotasPagadas}" placeholder="Recomendado" onchange="actualizarCampoImport(${idx},'prestamo','cuotasPagadas',this.value===''?'':parseInt(this.value)||0)"></div>`:''}
+      ${r.prestamo.tipo!=='Abierto'?`<div class="form-group"><label>Fecha último pago</label><input type="date" value="${r.prestamo.fechaUltimoPago||''}" onchange="actualizarCampoImport(${idx},'prestamo','fechaUltimoPago',this.value)"></div>`:''}
       <div class="form-group"><label>Saldo pendiente</label><input type="number" value="${isNaN(r.prestamo.saldoPendiente)?'':r.prestamo.saldoPendiente}" onchange="actualizarCampoImport(${idx},'prestamo','saldoPendiente',parseFloat(this.value)||0)"></div>
     </div>
     ${msgs?`<div style="font-size:12px">${msgs}</div>`:''}
@@ -3607,20 +3702,33 @@ function confirmarImportacion(){
       DB.prestamos.push(prestamoObj);
     } else {
       const intCalc=p.monto*(p.interesPct/100),total=p.monto+intCalc;
-      const saldo=isNaN(p.saldoPendiente)?total:p.saldoPendiente;
+      const capitalCuota=p.monto/p.cuotas, interesCuota=intCalc/p.cuotas;
+      const tieneCuotasPagadas=p.cuotasPagadas!==''&&p.cuotasPagadas!=null&&p.cuotasPagadas>=0;
+      let capApl=0,intApl=0,fechaPagoMig=fechaMig,saldo;
+      if(tieneCuotasPagadas){
+        // ── Fuente principal: cuotas pagadas exactas (sin adivinar reparto) ──
+        capApl=p.cuotasPagadas*capitalCuota;
+        intApl=p.cuotasPagadas*interesCuota;
+        saldo=Math.max(0,total-(capApl+intApl));
+        if(p.fechaUltimoPago) fechaPagoMig=p.fechaUltimoPago;
+      } else {
+        // ── Respaldo: solo hay saldo declarado, se reparte proporcional (no "capital primero") ──
+        saldo=isNaN(p.saldoPendiente)?total:p.saldoPendiente;
+        const yaAbonado=Math.max(0,total-saldo);
+        capApl=yaAbonado*(p.monto/total);
+        intApl=yaAbonado-capApl;
+      }
       prestamoObj={id:uid(),tipo:'Cuotas',clienteId:cli.id,monto:p.monto,interesPct:p.interesPct,
         interesCalc:intCalc,totalCobrar:total,frecuencia:p.frecuencia,cuotas:p.cuotas,
-        capitalCuota:p.monto/p.cuotas,interesCuota:intCalc/p.cuotas,fechaDesembolso:p.fechaDesembolso,
+        capitalCuota,interesCuota,fechaDesembolso:p.fechaDesembolso,
         estado:saldo<0.01?'Finalizado':'Activo',creadoPor:CURRENT_USER?CURRENT_USER.username:'',origen:'migrado'};
       DB.prestamos.push(prestamoObj);
-      const yaAbonado=total-saldo;
-      if(yaAbonado>0.5){
-        const capApl=Math.min(yaAbonado,p.monto);
-        const intApl=Math.max(yaAbonado-capApl,0);
-        DB.pagos.push({id:uid(),prestamoId:prestamoObj.id,clienteId:cli.id,fecha:fechaMig,
-          fechaISO:new Date().toISOString(),monto:yaAbonado,interesAplicado:intApl,capitalAplicado:capApl,
+      const yaAbonadoTotal=capApl+intApl;
+      if(yaAbonadoTotal>0.5){
+        DB.pagos.push({id:uid(),prestamoId:prestamoObj.id,clienteId:cli.id,fecha:fechaPagoMig,
+          fechaISO:new Date(fechaPagoMig+'T12:00:00').toISOString(),monto:yaAbonadoTotal,interesAplicado:intApl,capitalAplicado:capApl,
           excedente:0,recargo:0,cuotaNumero:null,estado:'Activo',
-          observaciones:'Saldo migrado desde cartera anterior',
+          observaciones:tieneCuotasPagadas?`Saldo migrado (${p.cuotasPagadas} cuotas pagadas antes de PAO)`:'Saldo migrado (estimado, sin cuotas pagadas conocidas)',
           usuario:CURRENT_USER?CURRENT_USER.username:'',esMigracion:true});
       }
     }
