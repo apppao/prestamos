@@ -828,6 +828,32 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
   </div>
 </div>
 
+<!-- MODAL BORRAR PRÉSTAMO -->
+<div class="modal-backdrop" id="modal-borrar-prestamo">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-title">🗑️ Borrar préstamo <button class="modal-close" onclick="cerrarModal('modal-borrar-prestamo')">×</button></div>
+    <input type="hidden" id="borrar-pre-id">
+    <div id="borrar-pre-resumen" class="calc-box" style="margin-bottom:14px"></div>
+    <div id="borrar-pre-aviso" style="display:none"></div>
+    <div class="form-group">
+      <label>Motivo de la eliminación *</label>
+      <select id="borrar-pre-motivo-select" onchange="document.getElementById('borrar-pre-motivo-otro').style.display=this.value==='Otro'?'block':'none'" style="margin-bottom:8px">
+        <option value="">Selecciona un motivo</option>
+        <option value="Creado por error">Creado por error</option>
+        <option value="Préstamo duplicado">Préstamo duplicado</option>
+        <option value="Asignado al cliente equivocado">Asignado al cliente equivocado</option>
+        <option value="Datos incorrectos">Datos incorrectos (monto, tasa, etc.)</option>
+        <option value="Otro">Otro motivo (especificar)</option>
+      </select>
+      <textarea id="borrar-pre-motivo-otro" placeholder="Describe el motivo..." style="display:none;width:100%;min-height:70px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;background:var(--surface);color:var(--text);font-family:inherit"></textarea>
+    </div>
+    <div class="btn-row">
+      <button class="btn" onclick="cerrarModal('modal-borrar-prestamo')">Cancelar</button>
+      <button class="btn btn-danger" onclick="confirmarBorrarPrestamo()">Borrar préstamo</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL IMPORTAR CARTERA -->
 <div class="modal-backdrop" id="modal-importar">
   <div class="modal" style="max-width:960px">
@@ -1709,11 +1735,21 @@ function guardarEditCliente(){
 function borrarCliente(id){
   if(!esAdmin()){toast('Solo un administrador puede borrar clientes','err');return}
   const c=DB.clientes.find(x=>x.id===id);if(!c)return;
-  const tienePresta=DB.prestamos.some(p=>p.clienteId===id);
-  if(tienePresta){toast('No se puede borrar: tiene préstamos registrados','err');return}
-  if(!confirm(`¿Borrar a ${c.nombre}? Esta acción no se puede deshacer.`))return;
+  const presClienteCli=DB.prestamos.filter(p=>p.clienteId===id);
+  const activosMorosos=presClienteCli.filter(p=>p.estado==='Activo'||p.estado==='Moroso');
+  if(activosMorosos.length>0){
+    toast(`No se puede borrar: tiene ${activosMorosos.length} préstamo${activosMorosos.length!==1?'s':''} activo${activosMorosos.length!==1?'s':''}/moroso${activosMorosos.length!==1?'s':''}. Bórralo${activosMorosos.length!==1?'s':''} o finalízalo${activosMorosos.length!==1?'s':''} primero.`,'err');
+    return;
+  }
+  let msg=`¿Borrar a ${c.nombre}? Esta acción no se puede deshacer.`;
+  if(presClienteCli.length>0){
+    const totalPrestadoHist=presClienteCli.reduce((s,p)=>s+p.monto,0);
+    const totalCobradoHist=presClienteCli.reduce((s,p)=>s+getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado').reduce((s2,pg)=>s2+pg.monto,0),0);
+    msg=`${c.nombre} tiene ${presClienteCli.length} préstamo${presClienteCli.length!==1?'s':''} finalizado${presClienteCli.length!==1?'s':''} con un histórico de ${fmt(totalPrestadoHist)} prestado y ${fmt(totalCobradoHist)} cobrado.\n\nEste historial dejará de verse en PAO (el cliente se elimina, pero sus préstamos y pagos NO se borran automáticamente — quedan sueltos).\n\n¿Deseas continuar?`;
+  }
+  if(!confirm(msg))return;
   DB.clientes=DB.clientes.filter(x=>x.id!==id);
-  audit('Borrar cliente',`Cliente eliminado: ${c.nombre}`,id);
+  audit('Borrar cliente',`Cliente eliminado: ${c.nombre}${presClienteCli.length>0?` (tenía ${presClienteCli.length} préstamo(s) finalizado(s) que se conservan)`:''}`,id);
   if(typeof window._paoMarcarBorrado==='function') window._paoMarcarBorrado('clientes',id);
   // Solo guardar en localStorage, _paoMarcarBorrado ya maneja Firestore
   localStorage.setItem('pao_data',JSON.stringify(DB));
@@ -1914,6 +1950,7 @@ function renderTablaPrestamos(){
           <option value="Moroso">Marcar Moroso</option>
           <option value="Finalizado">Marcar Finalizado</option>
         </select>
+        <button class="btn btn-sm btn-danger admin-only" onclick="abrirBorrarPrestamo('${p.id}')" style="margin-left:4px">Borrar</button>
       </td>
     </tr>`;
   }).join('');
@@ -2085,8 +2122,9 @@ function abrirDetallePrestamo(pid){
   }
 
   html+=`<div class="btn-row">
-    <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');document.getElementById('pag-cliente').value='${p.clienteId}';cargarPrestamosCliente();">💳 Ir a registrar pago</button>
+    <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');precargarClienteEnBuscador('pag','${p.clienteId}');">💳 Ir a registrar pago</button>
     <button class="btn btn-primary admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirEditPrestamo('${p.id}')">✏️ Editar préstamo</button>
+    <button class="btn btn-danger admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirBorrarPrestamo('${p.id}')">🗑️ Borrar préstamo</button>
   </div>`;
 
   // Tabla de amortización colapsable
@@ -2196,8 +2234,9 @@ function abrirDetallePrestamoAbierto(p){
     </div>
 
     <div class="btn-row" style="margin-top:16px">
-      <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');document.getElementById('pag-cliente').value='${p.clienteId}';cargarPrestamosCliente();">💳 Ir a registrar pago</button>
+      <button class="btn" onclick="cerrarModal('modal-detalle-prestamo');goTo('pagos');precargarClienteEnBuscador('pag','${p.clienteId}');">💳 Ir a registrar pago</button>
       <button class="btn btn-primary admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirEditPrestamo('${p.id}')">✏️ Editar</button>
+      <button class="btn btn-danger admin-only" onclick="cerrarModal('modal-detalle-prestamo');abrirBorrarPrestamo('${p.id}')">🗑️ Borrar</button>
     </div>
     <div class="btn-row" style="margin-top:6px">
       <button class="btn" onclick="compartirEstadoPrestamo('${p.id}')">📲 Compartir estado</button>
@@ -2708,6 +2747,71 @@ function confirmarAnulacion(){
   }
   renderTablaPrestamos();
   toast('Pago anulado correctamente');
+}
+
+// ── BORRAR PRÉSTAMO (definitivo, eliminación en cascada de sus pagos) ──
+function abrirBorrarPrestamo(pid){
+  if(!esAdmin()){toast('Solo un administrador puede borrar préstamos','err');return}
+  const p=DB.prestamos.find(x=>x.id===pid);if(!p){toast('Préstamo no encontrado','err');return}
+  const cli=DB.clientes.find(c=>c.id===p.clienteId);
+  const pagos=getPagosPresta(pid);
+  const totalPagado=pagos.reduce((s,pg)=>s+pg.monto,0);
+  document.getElementById('borrar-pre-id').value=pid;
+  document.getElementById('borrar-pre-resumen').innerHTML=`
+    <div class="calc-row"><span>Cliente</span><span>${cli?cli.nombre:'?'}</span></div>
+    <div class="calc-row"><span>Monto original</span><span>${fmt(p.monto)}</span></div>
+    <div class="calc-row"><span>Estado</span><span>${p.estado}</span></div>
+  `;
+  const aviso=document.getElementById('borrar-pre-aviso');
+  if(pagos.length>0){
+    aviso.style.display='block';
+    aviso.innerHTML=`<div class="alert alert-red" style="margin-bottom:14px">⚠️ Este préstamo tiene <strong>${pagos.length} pago${pagos.length!==1?'s':''}</strong> registrado${pagos.length!==1?'s':''} por un total de <strong>${fmt(totalPagado)}</strong>. Al borrarlo, esos pagos también se eliminarán permanentemente del historial.</div>`;
+  } else {
+    aviso.style.display='none';
+    aviso.innerHTML='';
+  }
+  document.getElementById('borrar-pre-motivo-select').value='';
+  document.getElementById('borrar-pre-motivo-otro').value='';
+  document.getElementById('borrar-pre-motivo-otro').style.display='none';
+  document.getElementById('modal-borrar-prestamo').classList.add('open');
+}
+function confirmarBorrarPrestamo(){
+  if(!esAdmin()){toast('Solo un administrador puede borrar préstamos','err');return}
+  const pid=document.getElementById('borrar-pre-id').value;
+  const p=DB.prestamos.find(x=>x.id===pid);if(!p){toast('Préstamo no encontrado','err');cerrarModal('modal-borrar-prestamo');return}
+  const motivoSel=document.getElementById('borrar-pre-motivo-select').value;
+  const motivoOtro=document.getElementById('borrar-pre-motivo-otro').value.trim();
+  if(!motivoSel){toast('Selecciona un motivo de eliminación','err');return}
+  if(motivoSel==='Otro' && !motivoOtro){toast('Describe el motivo de la eliminación','err');return}
+  const motivoFinal=motivoSel==='Otro'?sanitizeText(motivoOtro):motivoSel;
+
+  const cli=DB.clientes.find(c=>c.id===p.clienteId);
+  const pagos=getPagosPresta(pid);
+  const totalPagado=pagos.reduce((s,pg)=>s+pg.monto,0);
+
+  // ── Todo o nada: se borran el préstamo y todos sus pagos juntos ──
+  pagos.forEach(pg=>{
+    if(typeof window._paoMarcarBorrado==='function') window._paoMarcarBorrado('pagos', pg.id);
+  });
+  DB.pagos=DB.pagos.filter(pg=>pg.prestamoId!==pid);
+  DB.prestamos=DB.prestamos.filter(x=>x.id!==pid);
+  if(typeof window._paoMarcarBorrado==='function') window._paoMarcarBorrado('prestamos', pid);
+  localStorage.setItem('pao_data',JSON.stringify(DB));
+
+  audit('Borrar préstamo',
+    `Préstamo de ${cli?cli.nombre:'?'} (${fmt(p.monto)}, ${p.estado}) eliminado — Motivo: ${motivoFinal}. `+
+    (pagos.length>0?`Se eliminaron ${pagos.length} pago(s) por ${fmt(totalPagado)}.`:'No tenía pagos registrados.'),
+    pid);
+
+  cerrarModal('modal-borrar-prestamo');
+  renderTablaPrestamos();
+  actualizarSelectsClientes();
+  if(document.getElementById('page-dashboard')&&document.getElementById('page-dashboard').classList.contains('active')) renderDashboard();
+  if(prestamoSeleccionado&&prestamoSeleccionado.id===pid){
+    document.getElementById('pag-hist-card').style.display='none';
+    prestamoSeleccionado=null;
+  }
+  toast('Préstamo eliminado correctamente');
 }
 function renderHistorialPrestamo(pid){
   const p=DB.prestamos.find(x=>x.id===pid);if(!p)return;
