@@ -477,10 +477,10 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
               <select id="pre-cliente" style="display:none" onchange="preCalc()"><option value="">Seleccionar cliente</option></select>
               <div id="pre-cliente-lista" class="buscador-dropdown" style="display:none"></div>
             </div>
-            <div class="form-group"><label>Monto prestado (RD$) *</label><input id="pre-monto" type="number" min="0" placeholder="10000" oninput="preCalc()"></div>
-            <div class="form-group"><label>Interés (%)</label><input id="pre-interes" type="number" min="0" max="100" placeholder="30" oninput="preCalc()"></div>
+            <div class="form-group"><label>Monto prestado (RD$) *</label><input id="pre-monto" type="number" min="0" placeholder="Ingrese el monto del préstamo" oninput="preCalc()"><span style="font-size:11px;color:var(--text-muted)">Ej. 10,000</span></div>
+            <div class="form-group"><label>Interés (%)</label><input id="pre-interes" type="number" min="0" max="100" placeholder="Ingrese el porcentaje de interés" oninput="preCalc()"><span style="font-size:11px;color:var(--text-muted)">Ej. 20</span></div>
             <div class="form-group"><label>Frecuencia de pago</label><select id="pre-freq" onchange="preCalc()"><option value="Diaria">Diaria (cada 1 día)</option><option value="Semanal">Semanal (cada 7 días)</option><option value="Quincenal">Quincenal (cada 15 días)</option><option value="Mensual">Mensual (cada 30 días)</option></select></div>
-            <div class="form-group" id="pre-cuotas-wrap"><label>Cantidad de cuotas</label><input id="pre-cuotas" type="number" min="1" placeholder="10" oninput="preCalc()"></div>
+            <div class="form-group" id="pre-cuotas-wrap"><label>Cantidad de cuotas</label><input id="pre-cuotas" type="number" min="1" placeholder="Ingrese la cantidad de cuotas" oninput="preCalc()"><span id="pre-cuotas-rango" style="font-size:11px;color:var(--text-muted)">Ej. 12</span></div>
             <div class="form-group"><label>Fecha de desembolso</label><input id="pre-fecha" type="date"></div>
             <div class="form-group" id="pre-primer-pago-wrap"><label>Fecha del primer pago <span style="color:var(--text-muted);font-weight:400">(opcional)</span></label><input id="pre-primer-pago" type="date"></div>
             <div class="form-full" id="pre-calc-box" style="display:none">
@@ -1818,7 +1818,8 @@ function preCalc(){
   const freq=document.getElementById('pre-freq').value;
   const cuotas=parseInt(document.getElementById('pre-cuotas').value)||0;
   const maxC=freq==='Diaria'?90:freq==='Mensual'?60:freq==='Quincenal'?60:52;
-  document.getElementById('pre-cuotas').placeholder=`1–${maxC}`;
+  const rangoEl=document.getElementById('pre-cuotas-rango');
+  if(rangoEl) rangoEl.textContent=`Máximo ${maxC} cuotas para esta frecuencia`;
   const box=document.getElementById('pre-calc-box');
   if(!monto||!cuotas){box.style.display='none';return}
   box.style.display='block';
@@ -1892,6 +1893,7 @@ function guardarPrestamo(){
   save('prestamos', pid);
   ['pre-monto','pre-interes','pre-cuotas','pre-primer-pago'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('pre-cliente').value='';
+  document.getElementById('pre-cliente-buscar').value='';
   document.getElementById('pre-tipo').value='Cuotas';
   preToggleTipo();
   document.getElementById('pre-calc-box').style.display='none';
