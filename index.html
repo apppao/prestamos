@@ -1250,6 +1250,7 @@ function doLogout(){
   if(!confirm('¿Cerrar sesión?')) return;
   CURRENT_USER=null;
   sessionStorage.removeItem('pao_session');
+  if(typeof window._paoDetenerListeners==='function') window._paoDetenerListeners();
   const syncBtn = document.getElementById('btn-sync-manual');
   if(syncBtn) syncBtn.style.display='none';
   document.getElementById('app').classList.remove('visible');
@@ -4360,7 +4361,7 @@ setInterval(()=>{
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, doc, setDoc,
-  collection, getDocs,
+  collection, getDocs, onSnapshot,
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -4654,6 +4655,79 @@ async function _pullRemoto(orgId){
   return huboCambios;
 }
 
+// ── SYNC EN TIEMPO REAL (onSnapshot) ────────────────────────────
+// Sustituye el "preguntar cada cierto tiempo" por "que avisen cuando
+// algo cambie". No borra ni reemplaza _pullRemoto/_syncPulso: esos
+// se dejan como respaldo (botón manual + revisión al abrir/volver).
+let _listenersActivos = [];
+
+// Aplica UN documento cambiado a la colección local correspondiente.
+// Misma regla de conflicto que _mergear: gana el _ts más reciente.
+function _aplicarDocCambio(db, col, docId, data){
+  if(!db || !db[col]) return false;
+  if(data._borrado){
+    const idx = db[col].findIndex(x=>x.id===docId);
+    if(idx>=0){ db[col].splice(idx,1); return true; }
+    return false;
+  }
+  const { _ts, ...item } = data;
+  const idx = db[col].findIndex(x=>x.id===docId);
+  if(idx>=0){
+    const local = db[col][idx];
+    if(!_ts || !local._ts || _ts > local._ts){ db[col][idx] = item; return true; }
+    return false;
+  }
+  db[col].push(item);
+  return true;
+}
+
+function _refrescarPantallaActual(){
+  const activa = id => document.getElementById(id)?.classList.contains('active');
+  if(activa('page-dashboard') && typeof renderDashboard==='function') renderDashboard();
+  if(activa('page-clientes') && typeof renderTablaClientes==='function') renderTablaClientes();
+  if(activa('page-prestamos') && typeof renderTablaPrestamos==='function') renderTablaPrestamos();
+  if(typeof actualizarSelectsClientes==='function') actualizarSelectsClientes();
+}
+
+function _iniciarListeners(orgId){
+  if(!orgId || _listenersActivos.length>0) return; // ya están activos, no duplicar
+  ['clientes','prestamos','pagos'].forEach(col=>{
+    const unsub = onSnapshot(collection(_db, `organizaciones/${orgId}/${col}`), (snapshot)=>{
+      const db = window._paoGetDB && window._paoGetDB();
+      if(!db) return;
+      let huboCambios=false;
+      snapshot.docChanges().forEach(change=>{
+        if(change.type==='removed') return; // los borrados usan _borrado:true, no delete real
+        if(_aplicarDocCambio(db, col, change.doc.id, change.doc.data())) huboCambios=true;
+      });
+      if(huboCambios){
+        localStorage.setItem('pao_data', JSON.stringify({clientes:db.clientes,prestamos:db.prestamos,pagos:db.pagos,bitacora:db.bitacora||[]}));
+        _refrescarPantallaActual();
+      }
+    }, (error)=>{ console.error('[PAO sync] listener', col, error); });
+    _listenersActivos.push(unsub);
+  });
+  const unsubCfg = onSnapshot(doc(_db, `organizaciones/${orgId}/config/app_config`), (snap)=>{
+    if(!snap.exists()) return;
+    const cfg = window._paoGetCFG && window._paoGetCFG();
+    if(!cfg) return;
+    const { _ts, ...cfgData } = snap.data();
+    if(!cfg._ts || (_ts && _ts > cfg._ts)){
+      Object.assign(cfg, cfgData);
+      localStorage.setItem('pao_cfg', JSON.stringify(cfg));
+      if(typeof applyBranding==='function') applyBranding();
+      if(typeof applyTheme==='function') applyTheme(cfg.theme);
+    }
+  }, (error)=>{ console.error('[PAO sync] listener config', error); });
+  _listenersActivos.push(unsubCfg);
+}
+function _detenerListeners(){
+  _listenersActivos.forEach(unsub=>{ try{ unsub(); }catch(e){} });
+  _listenersActivos=[];
+}
+window._paoIniciarListeners = _iniciarListeners;
+window._paoDetenerListeners = _detenerListeners;
+
 async function _syncPulso(orgId, mostrarBanner=false){
   if(_tiempoDesdeUltimoPull() < SYNC_INTERVAL) return;
   const huboCambios = await _pullRemoto(orgId);
@@ -4725,6 +4799,7 @@ window._paoAplicarSync = function(){
 const _orgActual = localStorage.getItem('pao_codigo_activacion');
 if(_orgActual){
   setTimeout(() => _syncPulso(_orgActual, false), 3000);
+  _iniciarListeners(_orgActual); // sync en tiempo real (reemplaza el "preguntar cada rato")
 }
 
 // Sync al volver a la pestaña (con banner si hay cambios)
