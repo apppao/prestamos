@@ -383,6 +383,12 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
   </nav>
 
   <div class="main">
+    <!-- LICENCIA INACTIVA ALERT BANNER -->
+    <div id="licencia-alert" style="display:none;background:#fee2e2;border-left:4px solid #991b1b;padding:10px 16px;margin-bottom:12px;border-radius:0 8px 8px 0;align-items:center;gap:12px;font-size:13px">
+      <span style="font-size:18px">⚠️</span>
+      <span id="licencia-alert-msg" style="flex:1;color:#991b1b;font-weight:600"></span>
+      <button onclick="document.getElementById('licencia-alert').style.display='none'" style="background:none;border:none;cursor:pointer;color:#991b1b;font-size:16px;padding:0 4px">✕</button>
+    </div>
     <!-- BACKUP ALERT BANNER -->
     <div id="backup-alert" style="display:none;background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 16px;margin-bottom:12px;border-radius:0 8px 8px 0;display:none;align-items:center;gap:12px;font-size:13px">
       <span style="font-size:18px">⚠️</span>
@@ -802,6 +808,18 @@ window.dispatchEvent(new Event('firebase-activacion-ready'));
   </div>
 </div>
 
+<!-- MODAL NOVEDADES (aparece 1 sola vez por versión, por dispositivo) -->
+<div class="modal-backdrop" id="modal-novedades">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">🎉 Novedades <button class="modal-close" onclick="cerrarModalNovedades()">×</button></div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Esto es lo nuevo desde la última vez que usaste PAO:</div>
+    <div id="novedades-lista" style="display:flex;flex-direction:column;gap:12px;max-height:400px;overflow-y:auto"></div>
+    <div class="btn-row" style="margin-top:16px">
+      <button class="btn btn-primary" style="width:100%" onclick="cerrarModalNovedades()">Entendido</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL ANULAR PAGO (con motivo obligatorio) -->
 <div class="modal-backdrop" id="modal-anular-pago">
   <div class="modal" style="max-width:440px">
@@ -895,6 +913,31 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6
 // Quita caracteres < > de texto libre (nombre, dirección, notas, observaciones)
 // para que no se pueda inyectar HTML al insertarlo directo en innerHTML.
 const sanitizeText = (s) => (s||'').replace(/[<>]/g,'');
+
+// ═══════════════════ NOVEDADES (mensaje de "qué hay de nuevo") ═══════════════════
+// Subir este número cada vez que se entregue una mejora importante,
+// y actualizar la lista de abajo. Se muestra 1 sola vez por dispositivo.
+const APP_VERSION = '2026.09.1';
+const NOVEDADES_ULTIMA_VERSION = [
+  '🔄 Sincronización en tiempo real entre dispositivos — los cambios ya no esperan a que abras la app, aparecen solos.',
+  '📥 Nuevo: importar tu cartera existente desde Excel, con reconstrucción exacta del saldo pendiente.',
+  '🗑️ Ahora se pueden borrar préstamos y clientes de forma controlada, con motivo y registro en bitácora.',
+  '🔍 Buscador de cliente al crear un préstamo o registrar un pago — ya no hay que buscar en una lista larga.',
+  '📊 El dashboard ahora deja elegir entre ver la cartera activa o el histórico completo del negocio.',
+  '🔒 Las contraseñas ahora se guardan encriptadas, no en texto plano.',
+];
+function cerrarModalNovedades(){
+  document.getElementById('modal-novedades').classList.remove('open');
+  localStorage.setItem('pao_ultima_version_vista', APP_VERSION);
+}
+function mostrarNovedadesSiCorresponde(){
+  const vista = localStorage.getItem('pao_ultima_version_vista');
+  if(vista===APP_VERSION) return; // ya se mostró en este dispositivo
+  document.getElementById('novedades-lista').innerHTML = NOVEDADES_ULTIMA_VERSION
+    .map(n=>`<div style="font-size:14px;line-height:1.5">${n}</div>`).join('');
+  document.getElementById('modal-novedades').classList.add('open');
+}
+
 const initials = n => n.split(' ').slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
 function addDays(d,n){const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n);return dt.toISOString().split('T')[0]}
 function freqDias(f){return f==='Diaria'?1:f==='Semanal'?7:f==='Mensual'?30:15}
@@ -1012,6 +1055,19 @@ function checkCuotasAlert(){
   if(vencenProximo.length>0) html+=vencenProximo.map(l=>`<div>🟡 ${l}</div>`).join('');
   document.getElementById('cuotas-alert-body').innerHTML=html;
   banner.style.display='block';
+}
+
+// Aviso de licencia inactiva — informativo, no bloquea el uso (Opción A del roadmap).
+// Se llama desde el listener en tiempo real del código de activación.
+function mostrarAvisoLicencia(activo){
+  const banner=document.getElementById('licencia-alert');
+  if(!banner) return;
+  if(activo===false){
+    document.getElementById('licencia-alert-msg').textContent='⚠️ Tu licencia no está activa. Contacta a tu proveedor para reactivarla.';
+    banner.style.display='flex';
+  } else {
+    banner.style.display='none';
+  }
 }
 
 function checkBackupAlert(){
@@ -1222,6 +1278,7 @@ async function doLogin(){
   checkBackupAlert();
   checkCuotasAlert();
   initPWA();
+  mostrarNovedadesSiCorresponde();
 }
 
 function intentarSesionGuardada(){
@@ -1239,6 +1296,7 @@ function intentarSesionGuardada(){
     applyBranding();
     actualizarSelectsClientes();
     renderDashboard();
+    mostrarNovedadesSiCorresponde();
     return true;
   }catch(e){return false}
 }
@@ -4720,6 +4778,19 @@ function _iniciarListeners(orgId){
     }
   }, (error)=>{ console.error('[PAO sync] listener config', error); });
   _listenersActivos.push(unsubCfg);
+
+  // ── Aviso de licencia inactiva (Opción A) ────────────────────
+  // Escucha el propio documento del código de activación. Si el
+  // proveedor lo desactiva, avisa en la app — nunca bloquea el uso.
+  const unsubLic = onSnapshot(doc(_db, 'codigos_activacion', orgId), (snap)=>{
+    if(!snap.exists()){
+      if(typeof mostrarAvisoLicencia==='function') mostrarAvisoLicencia(false);
+      return;
+    }
+    const data=snap.data();
+    if(typeof mostrarAvisoLicencia==='function') mostrarAvisoLicencia(data.activo!==false);
+  }, (error)=>{ console.error('[PAO sync] listener licencia', error); });
+  _listenersActivos.push(unsubLic);
 }
 function _detenerListeners(){
   _listenersActivos.forEach(unsub=>{ try{ unsub(); }catch(e){} });
