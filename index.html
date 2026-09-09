@@ -980,19 +980,40 @@ function initPWA(){
   if(manifestEl) manifestEl.href=manifestUrl;
 
   // Register inline service worker for offline support
+  // Estrategia: primero internet (si hay), caché solo como respaldo offline.
+  // La caché se versiona con APP_VERSION para que cada actualización limpie lo viejo sola.
   if('serviceWorker' in navigator){
     const swCode=`
-const CACHE='pao-v1';
-const URLS=[self.location.href.replace('sw.js','')];
-self.addEventListener('install',e=>e.waitUntil(
-  caches.open(CACHE).then(c=>c.add(self.location.href.replace(/\\/sw\\.js$/,'')||'/'))
-));
-self.addEventListener('fetch',e=>e.respondWith(
-  caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>caches.match(e.request)))
-));`;
+const CACHE='pao-${APP_VERSION}';
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(CACHE).then(c => c.add(self.registration.scope)));
+});
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(nombres =>
+      Promise.all(nombres.filter(n => n.startsWith('pao-') && n !== CACHE).map(n => caches.delete(n)))
+    ).then(() => self.clients.claim())
+  );
+});
+self.addEventListener('fetch', e => {
+  e.respondWith(
+    fetch(e.request).then(r => {
+      const copia = r.clone();
+      caches.open(CACHE).then(c => c.put(e.request, copia));
+      return r;
+    }).catch(() => caches.match(e.request))
+  );
+});`;
     const swBlob=new Blob([swCode],{type:'text/javascript'});
     const swUrl=URL.createObjectURL(swBlob);
     navigator.serviceWorker.register(swUrl).catch(()=>{});
+    let _swYaRecargo=false;
+    navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+      if(_swYaRecargo) return;
+      _swYaRecargo=true;
+      window.location.reload();
+    });
   }
 
   // Install prompt button
@@ -1157,15 +1178,17 @@ function calcularMora(p){
     const pctMora=CONFIG.pctMora||0;
     const cap=p.capitalPendiente||p.monto;
     const interesGenerado=cap*(p.interesPct/100);
-    const recargo=enMora&&pctMora>0 ? interesGenerado*(pctMora/100)*Math.ceil(dias/7) : 0;
+    // Prorrateado por día: 1 día de atraso cobra 1/7 de la tasa semanal, no la semana completa.
+    const recargo=enMora&&pctMora>0 ? interesGenerado*(pctMora/100)*(dias/7) : 0;
     return {enMora,dias,recargo};
   }
   const cuota=getProximaCuotaPendiente(p);
   if(!cuota) return {enMora:false,dias:0,recargo:0};
   const dias=Math.max(0,diasDesde(cuota.fecha));
-  const enMora=dias>0 && p.estado==='Activo';
+  const enMora=dias>0 && (p.estado==='Activo'||p.estado==='Moroso');
   const pctMora=CONFIG.pctMora||0;
-  const recargo=enMora&&pctMora>0 ? (p.capitalCuota+p.interesCuota)*(pctMora/100)*Math.ceil(dias/7) : 0;
+  // Prorrateado por día: 1 día de atraso cobra 1/7 de la tasa semanal, no la semana completa.
+  const recargo=enMora&&pctMora>0 ? (p.capitalCuota+p.interesCuota)*(pctMora/100)*(dias/7) : 0;
   return {enMora,dias,recargo,cuotaFecha:cuota.fecha};
 }
 function actualizarMoraAutomatica(){
@@ -1459,7 +1482,9 @@ function calcPrestamoStats(p){
 function getProximaCuotaPendiente(p){
   const pagos=getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado');
   const capTotal=pagos.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
-  const intTotal=pagos.reduce((s,pg)=>s+pg.interesAplicado,0);
+  // El recargo por mora es un cargo aparte, no interés "programado" del préstamo —
+  // si se cuenta aquí, hace parecer que futuras cuotas ya tienen interés adelantado.
+  const intTotal=pagos.reduce((s,pg)=>s+pg.interesAplicado-(pg.recargo||0),0);
   const freq=freqDias(p.frecuencia);
   // Si hay un plan de cuotas personalizado (por recálculo de excedente), usarlo
   const plan=getPlanCuotas(p);
@@ -1505,8 +1530,12 @@ function getPlanCuotas(p){
 // SIN tocar las cuotas ya pasadas (usa un ajuste a partir de la próxima cuota).
 function recalcularCuotasPorExcedente(p, excedenteAplicadoCapital){
   const pagos=getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado');
-  const capTotalPagado=pagos.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0)+excedenteAplicadoCapital;
-  const intTotalPagado=pagos.reduce((s,pg)=>s+pg.interesAplicado,0);
+  // El pago recién registrado (con su excedente) ya está guardado en DB.pagos
+  // en este punto — no hay que volver a sumarlo o se cuenta dos veces.
+  const capTotalPagado=pagos.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
+  // Mismo criterio que en getProximaCuotaPendiente: el recargo no cuenta como
+  // interés "programado" pagado, o el interés de las cuotas futuras queda mal calculado.
+  const intTotalPagado=pagos.reduce((s,pg)=>s+pg.interesAplicado-(pg.recargo||0),0);
 
   const plan=getPlanCuotas(p);
   let capAcum=0,intAcum=0,cuotaActual=p.cuotas+1;
@@ -1566,7 +1595,8 @@ function saldoPendientePrestamo(p){
     const interes=capital*((p.interesPct||0)/100);
     return capital+interes;
   }
-  const pagadoAct=getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado').reduce((s,pg)=>s+pg.monto,0);
+  // Igual que en getProximaCuotaPendiente: el recargo no reduce el saldo del préstamo.
+  const pagadoAct=getPagosPresta(p.id).filter(pg=>pg.estado!=='Anulado').reduce((s,pg)=>s+pg.monto-(pg.recargo||0),0);
   return Math.max(0,(p.totalCobrar||0)-pagadoAct);
 }
 
@@ -2453,17 +2483,20 @@ function pagCalcAbierto(p, monto){
   }
   const capital   = p.capitalPendiente||p.monto;
   const interes   = capital*(p.interesPct/100);
-  const totalDebe = capital + interes;
+  const mora      = calcularMora(p);
+  const recargo   = mora.recargo||0;
+  const intPend   = interes + recargo;
+  const totalDebe = capital + intPend;
 
-  const intApl  = Math.min(monto, interes);
-  const capApl  = Math.max(monto - intApl, 0);
+  const intApl  = Math.min(monto, intPend);
+  const capApl  = Math.min(Math.max(monto - intApl, 0), capital);
   const nuevoC  = Math.max(capital - capApl, 0);
   const intSig  = nuevoC*(p.interesPct/100);
 
   document.getElementById('pd-cuota-num').textContent =
-    `Capital pendiente: ${fmt(capital)} · Interés: ${fmt(interes)}`;
+    `Capital pendiente: ${fmt(capital)} · Interés: ${fmt(interes)}`+(mora.enMora?` ⚠️ ${mora.dias}d mora`:'');
 
-  document.getElementById('pd-int').textContent  = monto>0 ? fmt(intApl)  : fmt(interes)+' (mínimo)';
+  document.getElementById('pd-int').textContent  = (monto>0 ? fmt(intApl) : fmt(intPend)+' (mínimo)')+(recargo>0?` (incl. recargo ${fmt(recargo)})`:'');
   document.getElementById('pd-cap').textContent  = monto>0 ? fmt(capApl)  : '—';
   document.getElementById('pd-exc').textContent  = '—';
 
@@ -2516,7 +2549,7 @@ function pagCalc(){
   const intApl=Math.min(monto,intPendTotal);
   const capApl=Math.min(Math.max(monto-intApl,0),cuotaInfo.capitalPend);
   const exc=Math.max(monto-intApl-capApl,0);
-  const completa=intApl>=intPendTotal&&capApl>=cuotaInfo.capitalPend;
+  const completa=intApl>=intPendTotal-0.01&&capApl>=cuotaInfo.capitalPend-0.01;
 
   // Partial payment info
   const pagadoEnEstaCuota=pagosAct
@@ -2557,9 +2590,12 @@ function guardarPagoAbierto(p){
 
   const capitalActual = p.capitalPendiente||p.monto;
   const interesGenerado = capitalActual * (p.interesPct/100);
-  const saldoTotal = capitalActual + interesGenerado;
+  const mora = calcularMora(p);
+  const recargo = mora.recargo||0;
+  const intPend = interesGenerado + recargo;
+  const saldoTotal = capitalActual + intPend;
 
-  // ── VALIDAR MONTO VS TOTAL QUE DEBE HOY ───────────────────
+  // ── VALIDAR MONTO VS TOTAL QUE DEBE HOY (incluye mora) ────
   if(monto>saldoTotal+0.01){
     if(!confirm(`⚠️ El monto ingresado (${fmt(monto)}) supera el total que debe hoy (${fmt(saldoTotal)}).\n\n¿Deseas continuar de todas formas? El excedente quedará registrado aparte (no se pierde).`)) return;
   }
@@ -2583,8 +2619,8 @@ function guardarPagoAbierto(p){
   const btn=document.querySelector('#pag-form-card .btn-success');
   if(btn){btn.disabled=true;btn.textContent='Procesando...'}
 
-  // Distribuir pago: primero cubre interés, luego capital (limitado al capital disponible)
-  const intApl = Math.min(monto, interesGenerado);
+  // Distribuir pago: primero cubre interés + mora, luego capital (limitado al capital disponible)
+  const intApl = Math.min(monto, intPend);
   const capApl = Math.min(Math.max(monto - intApl, 0), capitalActual);
   const excedente = Math.max(monto - intApl - capApl, 0);
   const nuevoCapital = Math.max(capitalActual - capApl, 0);
@@ -2597,7 +2633,7 @@ function guardarPagoAbierto(p){
     id:pagId, prestamoId:p.id, clienteId:p.clienteId,
     fecha:fechaPago, fechaISO:new Date().toISOString(),
     monto, interesAplicado:intApl, capitalAplicado:capApl, excedente,
-    recargo:0, capitalAntes:capitalActual, capitalDespues:nuevoCapital,
+    recargo, capitalAntes:capitalActual, capitalDespues:nuevoCapital,
     cuotaNumero:null, estado:'Activo',
     observaciones:obsEl?sanitizeText(obsEl.value.trim()):'',
     usuario:CURRENT_USER?CURRENT_USER.username:'',
@@ -2915,7 +2951,7 @@ function renderHistorialPrestamo(pid){
   const freq=freqDias(p.frecuencia);
   const pagosActCal=pagos.filter(pg=>pg.estado!=='Anulado');
   const capTotal=pagosActCal.reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
-  const intTotal=pagosActCal.reduce((s,pg)=>s+pg.interesAplicado,0);
+  const intTotal=pagosActCal.reduce((s,pg)=>s+pg.interesAplicado-(pg.recargo||0),0);
   const plan=getPlanCuotas(p);
   // Build per-cuota accumulation
   const pagoPorCuota={};
@@ -4015,7 +4051,7 @@ function exportarExcel(){
     const c=DB.clientes.find(x=>x.id===p.clienteId);
     const freq=freqDias(p.frecuencia);
     const capTotal=DB.pagos.filter(pg=>pg.prestamoId===p.id).reduce((s,pg)=>s+pg.capitalAplicado+pg.excedente,0);
-    const intTotal=DB.pagos.filter(pg=>pg.prestamoId===p.id).reduce((s,pg)=>s+pg.interesAplicado,0);
+    const intTotal=DB.pagos.filter(pg=>pg.prestamoId===p.id).reduce((s,pg)=>s+pg.interesAplicado-(pg.recargo||0),0);
     for(let i=0;i<p.cuotas;i++){
       const fecha=fechaCuota(p,i+1);
       const capEsp=(i+1)*p.capitalCuota,intEsp=(i+1)*p.interesCuota;
